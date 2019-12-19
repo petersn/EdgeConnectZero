@@ -9,6 +9,7 @@ def uai_encode_square(xy):
 	return "%s%i" % (string.ascii_lowercase[x], y + 1)
 
 def uai_encode_move(move):
+	return "%s-%s" % (move[0], move[1])
 	if move == "pass":
 		return "0000"
 	start, end = move
@@ -22,6 +23,8 @@ def uai_decode_square(s):
 	return x, y
 
 def uai_decode_move(s):
+	q, r = s.split("-")
+	return int(q), int(r)
 	if s in ("pass", "none", "0000"):
 		return "pass"
 	elif len(s) == 2:
@@ -36,7 +39,7 @@ def test():
 		assert uai_encode_move(uai_decode_move(s)) == s
 	for m in [("c", (4, 3)), ((4, 3), (2, 5))]:
 		assert uai_decode_move(uai_encode_move(m)) == m
-test()
+#test()
 
 def make_pair():
 	board = ataxx_rules.AtaxxState.initial()

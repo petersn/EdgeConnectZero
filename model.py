@@ -8,10 +8,10 @@ from functools import reduce
 product = lambda l: reduce(lambda x, y: x * y, l, 1)
 
 BOARD_SIZE = 7
-MOVE_TYPES = 17
+MOVE_TYPES = 1
 
 class Network:
-	INPUT_FEATURE_COUNT = 4
+	INPUT_FEATURE_COUNT = 9
 	NONLINEARITY = [tf.nn.relu]
 	FILTERS = 128
 	CONV_SIZE = 3

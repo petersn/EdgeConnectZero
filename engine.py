@@ -3,7 +3,8 @@
 import logging, time, sys, random, collections
 import numpy as np
 import tensorflow as tf
-import ataxx_rules
+#import ataxx_rules
+import edgeconnect_rules
 import model
 import uai_interface
 #import nn_evals
@@ -22,7 +23,7 @@ def initialize_model(path):
 	sess = tf.InteractiveSession()
 	sess.run(tf.initialize_all_variables())
 	model.sess = sess
-	model.load_model(network, path)
+#	model.load_model(network, path)
 	initialized = True
 
 def setup_evaluator(use_rpc=False, temperature=0.0):
@@ -48,8 +49,12 @@ def sample_by_weight(weights):
 def softmax(logits):
 	"""Somewhat numerically stable softmax routine."""
 	e_x = np.exp(logits - np.max(logits))
+	mask = edgeconnect_rules.VALID_CELLS_MASK[:, :, np.newaxis]
+	assert mask.shape == e_x.shape
+	e_x *= mask
 	return e_x / e_x.sum()
 
+"""
 def board_to_features(board):
 	features = np.zeros(
 		(model.BOARD_SIZE, model.BOARD_SIZE, model.Network.INPUT_FEATURE_COUNT),
@@ -108,6 +113,10 @@ def get_move_score(softmaxed_posterior, move):
 		delta = end[0] - start[0], end[1] - start[1]
 		layer = position_delta_layers[delta]
 		return softmaxed_posterior[end[0], end[1], layer]
+"""
+
+def get_move_score(softmaxed_posterior, move):
+	return softmaxed_posterior[move[0], move[1], 0]
 
 def add_noise_to_logits(raw_posterior, temperature):
 	assert raw_posterior.shape == (model.BOARD_SIZE, model.BOARD_SIZE, model.MOVE_TYPES)
@@ -156,8 +165,8 @@ class NNEvaluator:
 	@staticmethod
 	def board_key(b):
 		return (
-			b.to_move,
-			tuple(b.board),
+			b.move_state,
+			tuple(b.board.flatten()),
 		)
 
 	def __contains__(self, board):
@@ -176,7 +185,8 @@ class NNEvaluator:
 		# Evaluate the boards together.
 		self.ensemble_sizes.append(len(ensemble))
 #		symmetries = [random.randrange(8) for _ in range(len(ensemble))]
-		features = list(map(board_to_features, ensemble))
+		#features = list(map(edgeconnect_rulesboard_to_features, ensemble))
+		features = [b.featurize_board(0) for b in ensemble]
 #		features = [
 #			nn_evals.apply_symmetry(board_to_features(board), symmetry)
 #			for board, symmetry in zip(ensemble, symmetries)
@@ -195,7 +205,7 @@ class NNEvaluator:
 
 		# Write an entry into our cache.
 		for board, raw_posterior, (value,) in zip(ensemble, posteriors, values):
-			raw_posterior = add_noise_to_logits(raw_posterior, self.temperature)
+			#raw_posterior = add_noise_to_logits(raw_posterior, self.temperature)
 			softmax_posterior = softmax(raw_posterior)
 			posterior = {move: get_move_score(softmax_posterior, move) for move in board.legal_moves()}
 			# Renormalize the posterior. Add a small epsilon into the denominator to prevent divison by zero.
@@ -223,8 +233,8 @@ class NNEvaluator:
 		# Evaluate special value adjustments.
 		result = board.result()
 		if result != None:
-			assert result in (1, 2) and board.to_move in (1, 2)
-			entry.value = 1.0 if result == board.to_move else -1.0
+			assert result in (1, 2) and board.move_state[0] in (1, 2)
+			entry.value = 1.0 if result == board.move_state[0] else -1.0
 			entry.game_over = True
 		board.evaluations = entry
 
@@ -355,7 +365,7 @@ class MCTS:
 		if move != None:
 			new_board = node.board.copy()
 			try:
-				new_board.move(move)
+				new_board.make_move(move)
 			except AssertionError as e:
 				import sys
 				print(node.board, file=sys.stderr)
@@ -388,7 +398,7 @@ class MCTS:
 		for m, probability in new_node.board.evaluations.posterior.items():
 			if probability > NNEvaluator.PROBABILITY_THRESHOLD:
 				new_board = new_node.board.copy()
-				new_board.move(m)
+				new_board.make_move(m)
 				global_evaluator.add_to_queue(new_board)
 		# Convert the expected value result into a score.
 		value_score = (new_node.board.evaluations.value + 1) / 2.0
@@ -397,9 +407,10 @@ class MCTS:
 		edge = None
 		for edge in reversed(edges_on_path):
 			# Remember that each edge corresponds to an alternating player, so we have to reverse scores.
-			inverted = not inverted
-			value_score = 1 - value_score
-			assert inverted == (edge.parent_node.board.to_move != new_node.board.to_move)
+			if edge.parent_node.board.move_state[1] == 'b':
+				inverted = not inverted
+				value_score = 1 - value_score
+			assert inverted == (edge.parent_node.board.move_state[0] != new_node.board.move_state[0])
 			edge.adjust_score(value_score)
 			edge.parent_node.all_edge_visits += 1
 		if not edges_on_path:
@@ -446,7 +457,7 @@ class MCTSEngine:
 	MAX_STEPS_PER_SECOND = 1500.0
 
 	def __init__(self):
-		self.state = ataxx_rules.AtaxxState.initial()
+		self.state = edgeconnect_rules.EdgeConnectState.initial()
 		self.mcts = MCTS(self.state)
 
 	def set_state(self, new_board):
@@ -454,6 +465,9 @@ class MCTSEngine:
 		# For example, you can't distinguish different kinds of promotions that are followed by a capture.
 		# TODO: Evaluate if this can cause a really rare bug.
 		new_board = new_board.copy()
+		self.state = new_board
+		self.mcts = MCTS(self.state)
+		return
 
 		# Check to see if this board is one of our children's children.
 		for edge1 in self.mcts.root_node.outgoing_edges.values():
@@ -461,7 +475,7 @@ class MCTSEngine:
 				if edge2.child_node.board == new_board:
 					# We found a match! Reuse part of the tree.
 					self.mcts.play(self.state.to_move, edge1.move)
-					self.mcts.play(ataxx_rules.OTHER_PLAYER[self.state.to_move], edge2.move)
+					self.mcts.play(edgeconnect_rules.OTHER_PLAYER[self.state.to_move], edge2.move)
 					self.state = new_board
 					return
 		logging.debug(RED + "Failed to match a subtree." + ENDC)
@@ -567,7 +581,7 @@ class MCTSEngine:
 		logging.debug("PV [%2i]: %s" % (
 			len(pv),
 			" ".join(
-				["%s", RED + "%s" + ENDC][i % 2] % (uai_interface.uai_encode_move(edge.move),)
+				["%s", RED + "%s" + ENDC][edge.parent_node.board.move_state[0] - 1] % (uai_interface.uai_encode_move(edge.move),)
 				for i, edge in enumerate(pv)
 			),
 		))
@@ -579,7 +593,8 @@ if __name__ == "__main__":
 		level=logging.DEBUG,
 	)
 #	initialize_model("models/96x12-sample.npy")
-	initialize_model("/tmp/model-177.npy")
+#	initialize_model("/tmp/model-177.npy")
+	initialize_model("/home/snp/proj/.AtaxxZero_with_changes/run1/models/model-004.npy")
 	setup_evaluator()
 	engine = MCTSEngine()
 	for _ in range(2):

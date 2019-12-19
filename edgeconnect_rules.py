@@ -4,7 +4,7 @@ import itertools
 import numpy as np
 import UnionFind
 
-BOARD_RADIUS = 4
+BOARD_RADIUS = 3
 BOARD_SIZE = 2 * BOARD_RADIUS + 1
 
 NEXT_MOVE_STATE = {
@@ -133,7 +133,6 @@ class EdgeConnectState:
 			self.move_state[0],
 			self.move_state[1],
 			"".join(str(c) for qr, c in np.ndenumerate(self.board) if VALID_CELLS_MASK[qr]),
-
 		)
 
 	@staticmethod
@@ -165,6 +164,13 @@ class EdgeConnectState:
 			width=pixel_width,
 			height=pixel_height,
 			objects="\n".join(objects),
+		)
+
+	def copy(self):
+		return EdgeConnectState(
+			board=self.board.copy(),
+			move_state=self.move_state,
+			first_move_qr=self.first_move_qr,
 		)
 
 	def legal_moves(self):
