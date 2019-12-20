@@ -3,11 +3,13 @@
 import os, glob, json, random
 import tensorflow as tf
 import numpy as np
-import ataxx_rules
+#import ataxx_rules
+import edgeconnect_rules
 import uai_interface
 import engine
 import model
 
+"""
 def apply_symmetry(index, arr):
 	assert len(arr.shape) == 3 and arr.shape[:2] == (model.BOARD_SIZE, model.BOARD_SIZE)
 	assert index in range(8)
@@ -38,6 +40,13 @@ def apply_symmetry_to_move(index, move):
 	if start == "c":
 		return "c", apply_to_coord(end)
 	return apply_to_coord(start), apply_to_coord(end)
+"""
+
+def parse_move(move):
+	if isinstance(move, str):
+		move = int(move)
+		return move // model.BOARD_SIZE, move % model.BOARD_SIZE
+	return tuple(move)
 
 # WARNING: Loops infinitely if there are no games with no non-passing moves.
 def get_sample_from_entries(entries):
@@ -45,19 +54,24 @@ def get_sample_from_entries(entries):
 		entry = random.choice(entries)
 		ply = random.randrange(len(entry["boards"]))
 		if "random_ply" in entry:
+			assert False, "I don't know that this code path works!"
 			# Note that we need the +1 because we want to train on the board state just AFTER the random move was performed.
 			ply = entry["random_ply"] + 1
-		to_move = 1 if ply % 2 == 0 else 2
-		board = ataxx_rules.AtaxxState(entry["boards"][ply], to_move=to_move).copy()
+#		to_move = 1 if ply % 2 == 0 else 2
+		#board = ataxx_rules.AtaxxState(entry["boards"][ply], to_move=to_move).copy()
+		board = edgeconnect_rules.EdgeConnectState.from_string(entry["boards"][ply])
 		move  = entry["moves"][ply]
 		if move == "pass":
 			continue
 		# Convert the board into encoded features.
-		features = engine.board_to_features(board)
-		desired_value = [1 if entry["result"] == to_move else -1]
+		symmetry = random.randrange(12)
+		features = board.featurize_board(symmetry) #engine.board_to_features(board)
+		assert entry["result"] in (1, 2)
+		assert board.move_state[0] in (1, 2)
+		desired_value = [1 if entry["result"] == board.move_state[0] else -1]
 		# Apply a dihedral symmetry.
-		symmetry_index = random.randrange(8)
-		features = apply_symmetry(symmetry_index, features)
+#		symmetry_index = random.randrange(8)
+#		features = apply_symmetry(symmetry_index, features)
 		# Build up a map of the desired result.
 		desired_policy = np.zeros(
 			(model.BOARD_SIZE, model.BOARD_SIZE, model.MOVE_TYPES),
@@ -68,10 +82,16 @@ def get_sample_from_entries(entries):
 		else:
 			distribution = entry["dists"][ply]
 		for move, probability in distribution.items():
-			if isinstance(move, str):
-				move = uai_interface.uai_decode_move(move)
-			move = apply_symmetry_to_move(symmetry_index, move)
-			engine.add_move_to_heatmap(desired_policy, move, probability)
+			if probability == 0:
+				print("YAY " * 100)
+				continue
+			move = parse_move(move)
+			assert board.board[move] == 0
+			desired_policy[
+				edgeconnect_rules.apply_symmetry_to_qr(symmetry, move)
+			] = probability
+#			move = apply_symmetry_to_move(symmetry_index, move)
+#			engine.add_move_to_heatmap(desired_policy, move, probability)
 		assert abs(1 - desired_policy.sum()) < 1e-3
 #		desired_policy = engine.encode_move_as_heatmap(move)
 		return features, desired_policy, desired_value
@@ -85,6 +105,16 @@ def load_entries(paths):
 				if not line:
 					continue
 				entries.append(json.loads(line))
+	# Double check that all of the entries are good.
+	print("Verifying", len(entries), "entries.")
+	for entry in entries:
+		board = edgeconnect_rules.EdgeConnectState.from_string(entry["boards"][-1])
+		move = parse_move(entry["moves"][-1])
+		board.make_move(move)
+		assert entry["result"] in (1, 2)
+#		print("Final:", board.to_string())
+#		print("our result:", board.result(), "theirs:", entry["result"])
+		assert board.result() == entry["result"]
 	random.shuffle(entries)
 	return entries
 
@@ -135,7 +165,7 @@ if __name__ == "__main__":
 
 	print()
 	print("Model dimensions: %i filters, %i blocks, %i parameters." % (model.Network.FILTERS, model.Network.BLOCK_COUNT, network.total_parameters))
-	print("Have %i augmented samples, and sampling %i in total." % (ply_count * 8, args.steps * args.minibatch_size))
+	print("Have %i augmented samples, and sampling %i in total." % (ply_count * 12, args.steps * args.minibatch_size))
 	print("=== BEGINNING TRAINING ===")
 
 	# Begin training.

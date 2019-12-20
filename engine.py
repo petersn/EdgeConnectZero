@@ -23,7 +23,7 @@ def initialize_model(path):
 	sess = tf.InteractiveSession()
 	sess.run(tf.initialize_all_variables())
 	model.sess = sess
-#	model.load_model(network, path)
+	model.load_model(network, path)
 	initialized = True
 
 def setup_evaluator(use_rpc=False, temperature=0.0):
@@ -594,7 +594,8 @@ if __name__ == "__main__":
 	)
 #	initialize_model("models/96x12-sample.npy")
 #	initialize_model("/tmp/model-177.npy")
-	initialize_model("/home/snp/proj/.AtaxxZero_with_changes/run1/models/model-004.npy")
+#	initialize_model("/home/snp/proj/.AtaxxZero_with_changes/run1/models/model-004.npy")
+	initialize_model("/home/snp/proj/EdgeConnectZero/run1/models/model-037.npy")
 	setup_evaluator()
 	engine = MCTSEngine()
 	for _ in range(2):

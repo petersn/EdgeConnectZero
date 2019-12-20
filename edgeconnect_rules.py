@@ -116,20 +116,20 @@ def apply_symmetry_to_board(symmetry, board):
 	return new
 
 class EdgeConnectState:
-	def __init__(self, board, move_state=(1, 'a'), first_move_qr=None, legal_moves_cache=None):
+	def __init__(self, board, move_state=(1, 'b'), first_move_qr=None, legal_moves_cache=None):
 		self.board = board
 		self.move_state = move_state
 		self.first_move_qr = first_move_qr
 		self.legal_moves_cache = legal_moves_cache
 		assert move_state in NEXT_MOVE_STATE
-		assert (first_move_qr == None) == (move_state[1] == 'a')
+#		assert (first_move_qr == None) == (move_state[1] == 'a')
 
 	@staticmethod
 	def initial():
 		return EdgeConnectState(np.zeros((BOARD_SIZE, BOARD_SIZE), np.int8))
 
 	def to_string(self):
-		return "%i%s%s%s" % (
+		return "%i%s%s" % (
 			self.move_state[0],
 			self.move_state[1],
 			"".join(str(c) for qr, c in np.ndenumerate(self.board) if VALID_CELLS_MASK[qr]),
@@ -189,26 +189,26 @@ class EdgeConnectState:
 		self.first_move_qr = qr if self.move_state[1] == 'a' else None
 		self.move_state = NEXT_MOVE_STATE[self.move_state]
 
-	def compute_group_union_find(self):
+	def compute_group_union_find(self, board):
 		uf = UnionFind.UnionFind()
 		for qr in ALL_VALID_QR:
 			for neighbor in QR_NEIGHBORS[qr]:
-				if self.board[qr] == self.board[neighbor]:
+				if board[qr] == board[neighbor]:
 					uf.union(qr, neighbor)
 		return uf
 
 	def compute_group_counts(self, board=None):
 		board = self.board if board is None else board
-		uf = self.compute_group_union_find()
+		uf = self.compute_group_union_find(board)
 		groups = {0: set(), 1: set(), 2: set()}
 		for qr in ALL_VALID_QR:
-			player = self.board[qr]
+			player = board[qr]
 			groups[player].add(uf[qr])
 		return {player_index: len(group_set) for player_index, group_set in groups.items()}
 
 	def apply_captures(self):
 		# TODO: Ask Taras what the right rules are for this.
-		uf = self.compute_group_union_find()
+		uf = self.compute_group_union_find(self.board)
 		# Find each group with only one cell.
 		group_edge_count = {}
 		for qr in ALL_EDGE_QR:

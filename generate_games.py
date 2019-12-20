@@ -1,7 +1,8 @@
 #!/usr/bin/python
 
 import os, time, random, json, argparse, pprint
-import ataxx_rules
+#import ataxx_rules
+import edgeconnect_rules
 import engine
 import uai_ringmaster
 
@@ -14,7 +15,7 @@ OPENING_RANDOMIZATION_SCHEDULE = [
 ]
 
 def generate_game(args):
-	board = ataxx_rules.AtaxxState.initial()
+	board = edgeconnect_rules.EdgeConnectState.initial()
 	if not args.random_play:
 		m = engine.MCTS(board.copy(), use_dirichlet_noise=True)
 	entry = {"boards": [], "moves": []}
@@ -47,12 +48,12 @@ def generate_game(args):
 				randomization_probability = OPENING_RANDOMIZATION_SCHEDULE[ply]
 			if random.random() < randomization_probability:
 				selected_move = random.choice(board.legal_moves())
-		entry["boards"].append(list(board.board[:]))
+		entry["boards"].append(board.to_string())
 		entry["moves"].append(training_move)
 		# Execute the move.
 		if not args.random_play:
 			m.play(board.to_move, selected_move)
-		board.move(selected_move)
+		board.make_move(selected_move)
 		if board.result() != None:
 			break
 		if args.show_game:

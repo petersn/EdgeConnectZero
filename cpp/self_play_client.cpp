@@ -16,11 +16,12 @@
 #include <cassert>
 
 #include "json.hpp"
-#include "movegen.hpp"
-#include "makemove.hpp"
-#include "other.hpp"
+//#include "movegen.hpp"
+//#include "makemove.hpp"
+//#include "other.hpp"
+#include "edgeconnect_rules.h"
 
-#define STARTING_GAME_POSITION "x5o/7/3-3/2-1-2/3-3/7/o5x x"
+//#define STARTING_GAME_POSITION "x5o/7/3-3/2-1-2/3-3/7/o5x x"
 //#define ONE_RANDOM_MOVE
 
 using json = nlohmann::json;
@@ -32,9 +33,9 @@ constexpr double exploration_parameter = 1.0;
 constexpr double dirichlet_alpha = 0.15;
 constexpr double dirichlet_weight = 0.25;
 constexpr int maximum_game_plies = 400;
-//const std::vector<double> opening_randomization_schedule {
-//	0.2, 0.2, 0.1, 0.1, 0.05, 0.05, 0.025, 0.025, 0.0125, 0.0125,
-//};
+const std::vector<double> opening_randomization_schedule {
+	0.2, 0.2, 0.1, 0.1, 0.05, 0.05, 0.025, 0.025, 0.0125, 0.0125,
+};
 
 std::random_device rd;
 std::default_random_engine generator(rd());
@@ -45,6 +46,7 @@ struct StopWorking : public std::exception {};
 // Configuration.
 int global_visits;
 
+/*
 // Extend Move with a hash.
 namespace std {
 	template<> struct hash<Move> {
@@ -53,17 +55,7 @@ namespace std {
 		}
 	};
 }
-
-template<int s1, int s2, int s3>
-int stride_index(int x, int y, int z) {
-	assert(0 <= x and x < s1);
-	assert(0 <= y and y < s2);
-	assert(0 <= z and z < s3);
-	return
-		s2 * s3 * x +
-		     s3 * y +
-			      z;
-}
+*/
 
 struct pair_hash {
 public:
@@ -85,28 +77,18 @@ std::unordered_map<std::pair<int, int>, int, pair_hash> position_delta_layers {
 	{{ 2,  1}, 14}, {{ 2,  2}, 15},
 };
 
-std::vector<int> serialize_board_for_json(const Position& board) {
-	std::vector<int> result;
-	for (int y = 0; y < 7; y++) {
-		for (int x = 0; x < 7; x++) {
-			int square = x + 7 * (6 - y);
-			uint64_t mask = 1ull << square;
-			bool cross_present   = board.pieces[PIECE::CROSS]  & mask;
-			bool nought_present  = board.pieces[PIECE::NOUGHT] & mask;
-			if (cross_present) {
-				result.push_back(1);
-			} else if (nought_present) {
-				result.push_back(2);
-			} else {
-				result.push_back(0);
-			}
-		}
-	}
-	assert(result.size() == 7 * 7);
+std::vector<char> serialize_board_for_json(const EdgeConnectState& board) {
+	std::vector<char> result;
+	result.push_back(board.move_state <= 1 ? '1' : '2');
+	result.push_back(board.move_state % 2 == 0 ? 'a' : 'b');
+	for (Move m = 0; m < QR_COUNT; m++)
+		if (VALID_CELLS_MASK[m])
+			result.push_back('0' + board.cells[m]);
 	return result;
 }
 
-int get_board_result(const Position& board, Move* optional_moves_buffer=nullptr, int* optional_moves_count=nullptr) {
+#if 0
+int get_board_result(const EdgeConnectState& board, Move* optional_moves_buffer=nullptr, int* optional_moves_count=nullptr) {
 	int p1_pieces = popcountll(board.pieces[PIECE::CROSS]);
 	int p2_pieces = popcountll(board.pieces[PIECE::NOUGHT]);
 	int blockers  = popcountll(board.blockers);
@@ -142,6 +124,7 @@ int get_board_result(const Position& board, Move* optional_moves_buffer=nullptr,
 	// Finally, if none of the above cases matched, then the game isn't finished yet.
 	return 0;
 }
+#endif
 
 std::pair<const float*, double> request_evaluation(int thread_id, const float* feature_string);
 
@@ -150,14 +133,15 @@ struct Evaluations {
 	double value;
 	std::unordered_map<Move, double> posterior;
 
-	void populate(int thread_id, const Position& board, bool use_dirichlet_noise) {
+	void populate(int thread_id, const EdgeConnectState& board, bool use_dirichlet_noise) {
 		// Completely reset the evaluation.
 		posterior.clear();
 		game_over = false;
 
-		Move moves_buffer[256];
-		int num_moves;
-		int result = get_board_result(board, moves_buffer, &num_moves);
+//		Move moves_buffer[256];
+//		int num_moves;
+//		int result = get_board_result(board, moves_buffer, &num_moves);
+		int result = board.result();
 
 		if (result != 0) {
 			game_over = true;
@@ -166,13 +150,16 @@ struct Evaluations {
 			value = result == 1 ? 1.0 : -1.0;
 			// Flip the value to be from the perspective of the current player.
 			// TODO: XXX: Validate that I got this the right way around.
-			if (board.turn == SIDE::NOUGHT)
+			if (board.get_side() == Side::SECOND_PLAYER)
 				value *= -1;
 			return;
 		}
 
+		float feature_buffer[FEATURE_MAP_LENGTH] = {};
+		board.featurize(feature_buffer);
+
+/*
 		// Build a features map, initialized to all zeros.
-		float feature_buffer[7 * 7 * 4] = {};
 		for (int y = 0; y < 7; y++) {
 			for (int x = 0; x < 7; x++) {
 				// Fill in layer 0 with all ones.
@@ -200,41 +187,31 @@ struct Evaluations {
 					feature_buffer[stride_index<7, 7, 4>(x, y, 3)] = 1.0;
 			}
 		}
+*/
 
 		auto request_result = request_evaluation(thread_id, feature_buffer);
 		const float* posterior_array = request_result.first;
 		value = request_result.second;
 
 		// Softmax the posterior array.
-		double softmaxed[7 * 7 * 17];
-		for (int i = 0; i < (7 * 7 * 17); i++)
+		double softmaxed[BOARD_SIZE * BOARD_SIZE];
+		for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++)
 			softmaxed[i] = exp(posterior_array[i]);
 		double total = 0.0;
-		for (int i = 0; i < (7 * 7 * 17); i++)
+		for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++)
 			total += softmaxed[i];
 		if (total != 0.0) {
-			for (int i = 0; i < (7 * 7 * 17); i++)
+			for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++)
 				softmaxed[i] /= total;
 		}
 
 		// Evaluate movegen.
+		Move legal_moves[256];
+		int num_moves = board.legal_moves(legal_moves);
 		double total_probability = 0.0;
 		for (int i = 0; i < num_moves; i++) {
-			Move& move = moves_buffer[i];
-			int from_x = move.from % 7;
-			int from_y = move.from / 7;
-			int to_x   = move.to   % 7;
-			int to_y   = move.to   / 7;
-			from_y = 6 - from_y;
-			to_y   = 6 - to_y;
-			double probability;
-			if (is_single(move)) {
-				probability = softmaxed[stride_index<7, 7, 17>(to_x, to_y, 16)];
-			} else {
-				std::pair<int, int> delta{to_x - from_x, to_y - from_y};
-				int layer_index = position_delta_layers.at(delta);
-				probability = softmaxed[stride_index<7, 7, 17>(to_x, to_y, layer_index)];
-			}
+			Move move = legal_moves[i];
+			double probability = softmaxed[move];
 			posterior.insert({move, probability});
 			total_probability += probability;
 		}
@@ -298,14 +275,14 @@ struct MCTSEdge {
 };
 
 struct MCTSNode {
-	Position board;
+	EdgeConnectState board;
 	bool evals_populated = false;
 	Evaluations evals;
 	shared_ptr<MCTSNode> parent;
 	int all_edge_visits = 0;
 	std::unordered_map<Move, MCTSEdge> outgoing_edges;
 
-	MCTSNode(const Position& board) : board(board) {}
+	MCTSNode(const EdgeConnectState& board) : board(board) {}
 
 	double total_action_score(const Move& m) {
 		assert(evals_populated);
@@ -368,17 +345,17 @@ struct MCTSNode {
 
 struct MCTS {
 	int thread_id;
-	Position root_board;
+	EdgeConnectState root_board;
 	bool use_dirichlet_noise;
 	shared_ptr<MCTSNode> root_node;
 
-	MCTS(int thread_id, const Position& root_board, bool use_dirichlet_noise)
+	MCTS(int thread_id, const EdgeConnectState& root_board, bool use_dirichlet_noise)
 		: thread_id(thread_id), root_board(root_board), use_dirichlet_noise(use_dirichlet_noise)
 	{
 		init_from_scratch(root_board);
 	}
 
-	void init_from_scratch(const Position& root_board) {
+	void init_from_scratch(const EdgeConnectState& root_board) {
 		root_node = std::make_shared<MCTSNode>(root_board);
 		root_node->populate_evals(thread_id, use_dirichlet_noise);
 	}
@@ -428,8 +405,8 @@ struct MCTS {
 
 		// 2) If the move is non-null then expand once at the leaf.
 		if (move != NO_MOVE) {
-			Position new_board = leaf_node->board;
-			makemove(new_board, move);
+			EdgeConnectState new_board = leaf_node->board;
+			new_board.make_move(move);
 			new_node = std::make_shared<MCTSNode>(new_board);
 			auto pair_it_success = leaf_node->outgoing_edges.insert({
 				move,
@@ -451,23 +428,28 @@ struct MCTS {
 		bool inverted = false;
 		for (auto it = edges_on_path.rbegin(); it != edges_on_path.rend(); it++) {
 			MCTSEdge& edge = **it;
-			inverted = not inverted;
-			value_score = 1.0 - value_score;
-			assert(inverted == (edge.parent_node->board.turn != new_node->board.turn));
+			// Only invert when we're transitioning from a player's second stone to the next player's first.
+			if (edge.parent_node->board.move_state % 2 == 1) {
+				inverted = not inverted;
+				value_score = 1.0 - value_score;
+			}
+			assert(inverted == (edge.parent_node->board.get_side() != new_node->board.get_side()));
 			edge.adjust_score(value_score);
 			edge.parent_node->all_edge_visits++;
 		}
 		if (edges_on_path.size() == 0) {
 			cout << ">>> No edges on path!" << endl;
-			print(root_board, true);
+			//print(root_board, true);
 			cout << "Valid moves list:" << endl;
-			print_moves(root_board);
+			//print_moves(root_board);
 			cout << "Select action at root:" << endl;
 			Move selected_action = root_node->select_action();
 			cout << "Posterior length:" << root_node->evals.posterior.size() << endl;
 			cout << "Game over:" << root_node->evals.game_over << endl;
-			cout << "Here it is: " << selected_action.from << " " << selected_action.to << endl;
-			cout << ">>> Move:" << move.from << " " << move.to << endl;
+			cout << "Here it is: " << selected_action << endl;
+			//cout << "Here it is: " << selected_action.from << " " << selected_action.to << endl;
+//			cout << ">>> Move:" << move.from << " " << move.to << endl;
+			cout << ">>> Move: " << move << endl;
 		}
 		assert(edges_on_path.size() != 0);
 	}
@@ -477,7 +459,7 @@ struct MCTS {
 		auto it = root_node->outgoing_edges.find(move);
 		// If we miss, just throw away everything and init from scratch.
 		if (it == root_node->outgoing_edges.end()) {
-			makemove(root_board, move);
+			root_board.make_move(move);
 			init_from_scratch(root_board);
 			return;
 		}
@@ -506,8 +488,8 @@ Move sample_proportionally_to_visits(const shared_ptr<MCTSNode>& node) {
 }
 
 json generate_game(int thread_id) {
-	Position board;
-	set_board(board, STARTING_GAME_POSITION);
+	EdgeConnectState board;
+//	set_board(board, STARTING_GAME_POSITION);
 	MCTS mcts(thread_id, board, true);
 	json entry = {{"boards", {}}, {"moves", {}}, {"dists", {}}};
 	int steps_done = 0;
@@ -551,7 +533,7 @@ json generate_game(int thread_id) {
 		}
 #endif
 
-/*
+
 		// If appropriate choose a uniformly random legal move in the opening.
 		if (ply < opening_randomization_schedule.size() and
 		    std::uniform_real_distribution<double>{0, 1}(generator) < opening_randomization_schedule[ply]) {
@@ -561,23 +543,25 @@ json generate_game(int thread_id) {
 			std::advance(it, random_index);
 			selected_move = (*it).first;
 		}
-*/
-		entry["boards"].push_back(serialize_board_for_json(mcts.root_board));
-		entry["moves"].push_back(move_string(selected_move));
+
+		std::vector<char> serialized_board = serialize_board_for_json(mcts.root_board);
+		std::string s(serialized_board.begin(), serialized_board.end());
+		entry["boards"].push_back(s);
+		entry["moves"].push_back(std::to_string(selected_move));
 		entry["dists"].push_back({});
 		// Write out the entire visit distribution.
 		for (const std::pair<Move, MCTSEdge>& p : mcts.root_node->outgoing_edges) {
 			double weight = p.second.edge_visits / mcts.root_node->all_edge_visits;
-			entry["dists"].back()[move_string(p.first)] = weight;
+			entry["dists"].back()[std::to_string(p.first)] = weight;
 		}
 		mcts.play(selected_move);
-		if (get_board_result(mcts.root_node->board) != 0)
+		if (mcts.root_node->board.result() != 0)
 			break;
 	}
 //	float work_factor = steps_done / (float)(global_visits * entry["moves"].size());
 //	cout << "Work factor: " << work_factor << endl;
 
-	entry["result"] = get_board_result(mcts.root_node->board);
+	entry["result"] = mcts.root_node->board.result();
 	return entry;
 }
 
@@ -612,7 +596,7 @@ struct Worker {
 
 	bool response_filled;
 	double response_value;
-	float response_posterior[7 * 7 * 17];
+	float response_posterior[BOARD_SIZE * BOARD_SIZE];
 
 	Worker(int thread_id)
 		: t(Worker::thread_main, thread_id) {}
@@ -652,8 +636,8 @@ std::pair<const float*, double> request_evaluation(int thread_id, const float* f
 		int slot_index = fill_levels[current_buffer]++;
 		assert(0 <= slot_index and slot_index < response_slots[0].size());
 		// Copy our features into the big buffer.
-		float* destination = global_fill_buffers[current_buffer] + (7 * 7 * 4) * slot_index;
-		std::copy(feature_string, feature_string + (7 * 7 * 4), destination);
+		float* destination = global_fill_buffers[current_buffer] + FEATURE_MAP_LENGTH * slot_index;
+		std::copy(feature_string, feature_string + FEATURE_MAP_LENGTH, destination);
 		// Place an entry requesting a reply.
 		response_slots[current_buffer].at(slot_index).thread_id = thread_id;
 		// Set that we're waiting on a response.
@@ -681,6 +665,8 @@ std::pair<const float*, double> request_evaluation(int thread_id, const float* f
 }
 
 extern "C" void launch_threads(char* output_path, int visits, float* fill_buffer1, float* fill_buffer2, int buffer_entries, int thread_count) {
+	edgeconnect_initialize_structures();
+
 	global_visits = visits;
 	global_fill_buffers[0] = fill_buffer1;
 	global_fill_buffers[1] = fill_buffer2;
@@ -726,8 +712,8 @@ extern "C" void complete_workload(int workload, float* posteriors, float* values
 		ResponseSlot& slot = response_slots[workload].at(i);
 		Worker& worker = *global_workers_by_id.at(slot.thread_id);
 		worker.response_value = values[i];
-		std::copy(posteriors, posteriors + (7 * 7 * 17), worker.response_posterior);
-		posteriors += (7 * 7 * 17);
+		std::copy(posteriors, posteriors + BOARD_SIZE * BOARD_SIZE, worker.response_posterior);
+		posteriors += BOARD_SIZE * BOARD_SIZE;
 		{
 			std::lock_guard<std::mutex> lk(worker.thread_mutex);
 			worker.response_filled = true;

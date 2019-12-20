@@ -32,7 +32,7 @@ def generate_games(model_number):
 	# Launch the games generation.
 	games_processes = [
 		subprocess.Popen([
-			"python", "accelerated_generate_games.py",
+			"python3", "accelerated_generate_games.py",
 				"--network", index_to_model_path(model_number),
 				"--output-games", path,
 				"--visits", str(args.visits),
@@ -141,11 +141,12 @@ technically statistically biases the games slightly towards being shorter.)
 		assert steps > 0
 		print("Steps:", steps)
 		subprocess.check_call([
-			"python", "train.py",
+			"python3", "train.py",
 				"--steps", str(steps),
 				"--games"] + games_paths + [
 				"--old-path", old_model,
 				"--new-path", new_model,
+				"--minibatch-size", "64",
 		], close_fds=True)
 
 		end = time.time()

@@ -1,7 +1,8 @@
 #!/usr/bin/python
 
 import sys, string
-import ataxx_rules
+#import ataxx_rules
+import edgeconnect_rules
 
 def uai_encode_square(xy):
 	x, y = xy

@@ -2,7 +2,8 @@
 
 import sys, random, string, subprocess, atexit, time, datetime, itertools, os
 import uai_interface
-import ataxx_rules
+#import ataxx_rules
+import edgeconnect_rules
 
 OPENING_DEPTH = 0
 
