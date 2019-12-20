@@ -300,6 +300,18 @@ struct MCTSNode {
 		return u_score + Q_score;
 	}
 
+	double get_overall_evaluation() {
+		double total_score = 0;
+		int denominator = 0;
+		for (auto& p : outgoing_edges) {
+			total_score += p.second.edge_total_score;
+			denominator += p.second.edge_visits;
+		}
+		if (denominator == 0)
+			return 0;
+		return total_score / denominator;
+	}
+
 	void populate_evals(int thread_id, bool use_dirichlet_noise=false) {
 		if (evals_populated)
 			return;
@@ -491,7 +503,7 @@ json generate_game(int thread_id) {
 	EdgeConnectState board;
 //	set_board(board, STARTING_GAME_POSITION);
 	MCTS mcts(thread_id, board, true);
-	json entry = {{"boards", {}}, {"moves", {}}, {"dists", {}}};
+	json entry = {{"boards", {}}, {"moves", {}}, {"dists", {}}, {"evals", {}}};
 	int steps_done = 0;
 
 #ifdef ONE_RANDOM_MOVE
@@ -548,6 +560,7 @@ json generate_game(int thread_id) {
 		std::string s(serialized_board.begin(), serialized_board.end());
 		entry["boards"].push_back(s);
 		entry["moves"].push_back(std::to_string(selected_move));
+		entry["evals"].push_back(mcts.root_node->get_overall_evaluation());
 		entry["dists"].push_back({});
 		// Write out the entire visit distribution.
 		for (const std::pair<Move, MCTSEdge>& p : mcts.root_node->outgoing_edges) {
