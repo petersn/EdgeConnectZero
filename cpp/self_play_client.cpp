@@ -568,13 +568,13 @@ json generate_game(int thread_id) {
 			entry["dists"].back()[std::to_string(p.first)] = weight;
 		}
 		mcts.play(selected_move);
-		if (mcts.root_node->board.result() != 0)
+		if (mcts.root_node->board.result_with_early_stopping() != 0)
 			break;
 	}
 //	float work_factor = steps_done / (float)(global_visits * entry["moves"].size());
 //	cout << "Work factor: " << work_factor << endl;
 
-	entry["result"] = mcts.root_node->board.result();
+	entry["result"] = mcts.root_node->board.result_with_early_stopping();
 	return entry;
 }
 

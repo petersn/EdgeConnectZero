@@ -212,6 +212,20 @@ struct EdgeConnectState {
 		return player_scores[0] > player_scores[1] ? Side::FIRST_PLAYER : Side::SECOND_PLAYER;
 	}
 
+	Side result_with_early_stopping() const {
+		Side results[2];
+		for (Side player : {Side::FIRST_PLAYER, Side::SECOND_PLAYER}) {
+			EdgeConnectState filled_in_for_player = *this;
+			for (Move m = 0; m < QR_COUNT; m++)
+				if (VALID_CELLS_MASK[m] and filled_in_for_player.cells[m] == 0)
+					filled_in_for_player.cells[m] = player;
+			results[player - 1] = filled_in_for_player.result();
+		}
+		if (results[0] == results[1])
+			return results[0];
+		return Side::NOBODY;
+	}
+
 	void featurize(float* feature_buffer) const {
 		for (int q = 0; q < BOARD_SIZE; q++) {
 			for (int r = 0; r < BOARD_SIZE; r++) {	
