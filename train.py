@@ -44,6 +44,8 @@ def apply_symmetry_to_move(index, move):
 
 def parse_move(move):
 	if isinstance(move, str):
+		if "-" in move:
+			return tuple(map(int, move.split("-")))
 		move = int(move)
 		return move // model.BOARD_SIZE, move % model.BOARD_SIZE
 	return tuple(move)
@@ -125,7 +127,7 @@ if __name__ == "__main__":
 	parser.add_argument("--old-path", metavar="PATH", help="Path for input network.")
 	parser.add_argument("--new-path", metavar="PATH", required=True, help="Path for output network.")
 	parser.add_argument("--steps", metavar="COUNT", type=int, default=1000, help="Training steps.")
-	parser.add_argument("--minibatch-size", metavar="COUNT", type=int, default=512, help="Minibatch size.")
+	parser.add_argument("--minibatch-size", metavar="COUNT", type=int, default=128, help="Minibatch size.")
 	parser.add_argument("--learning-rate", metavar="LR", type=float, default=0.001, help="Learning rate.")
 	args = parser.parse_args()
 	print("Arguments:", args)
