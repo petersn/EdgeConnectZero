@@ -114,7 +114,7 @@ def load_entries(paths):
 		assert entry["result"] in (1, 2)
 #		print("Final:", board.to_string())
 #		print("our result:", board.result(), "theirs:", entry["result"])
-		assert board.result() == entry["result"]
+		assert board.result_with_early_stopping() == entry["result"]
 	random.shuffle(entries)
 	return entries
 

@@ -246,6 +246,17 @@ class EdgeConnectState:
 		assert scores[1] != scores[2]
 		return 1 if scores[1] > scores[2] else 2
 
+	def result_with_early_stopping(self):
+		optimistic = {}
+		for player in (1, 2):
+			duplicate = self.copy()
+			for qr in ALL_VALID_QR:
+				if duplicate.board[qr] == 0:
+					duplicate.board[qr] = player
+			optimistic[player] = duplicate.result()
+		if optimistic[1] == optimistic[2]:
+			return optimistic[1]
+
 	def featurize_board(self, symmetry):
 		symm_board = apply_symmetry_to_board(symmetry, self.board)
 		result = np.zeros((BOARD_SIZE, BOARD_SIZE, 9), np.float32)
