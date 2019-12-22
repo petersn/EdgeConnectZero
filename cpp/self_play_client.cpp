@@ -355,6 +355,31 @@ struct MCTSNode {
 	}
 };
 
+namespace std {
+	template<> struct hash<EdgeConnectState> {
+		size_t operator()(const EdgeConnectState& m) const {
+			size_t result = 1234567;
+			for (int i = 0; i < QR_COUNT; i++) {
+				result ^= (result << 5) + m.cells[i] + (result >> 2);
+			}
+			result += m.move_state;
+			return result;
+		}
+	};
+}
+
+std::unordered_map<EdgeConnectState, shared_ptr<MCTSNode>> transposition_table;
+
+shared_ptr<MCTSNode> create_node_with_transposition(const EdgeConnectState& board) {
+	auto it = transposition_table.find(board);
+	if (it == transposition_table.end()) {
+		shared_ptr<MCTSNode> new_node = std::make_shared<MCTSNode>(board);
+		transposition_table[board] = new_node;
+		return new_node;
+	}
+	return (*it).second;
+}
+
 struct MCTS {
 	int thread_id;
 	EdgeConnectState root_board;
@@ -419,7 +444,8 @@ struct MCTS {
 		if (move != NO_MOVE) {
 			EdgeConnectState new_board = leaf_node->board;
 			new_board.make_move(move);
-			new_node = std::make_shared<MCTSNode>(new_board);
+			new_node = create_node_with_transposition(new_board);
+//			new_node = std::make_shared<MCTSNode>(new_board);
 			auto pair_it_success = leaf_node->outgoing_edges.insert({
 				move,
 				MCTSEdge{move, leaf_node.get(), new_node},

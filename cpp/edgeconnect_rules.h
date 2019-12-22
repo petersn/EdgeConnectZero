@@ -260,6 +260,11 @@ struct EdgeConnectState {
 			}
 		}
 	}
+
+	bool operator ==(const EdgeConnectState& other) const {
+		// Intentionally ignore the first_move_qr!
+		return cells == other.cells and move_state == other.move_state;
+	}
 };
 
 #endif
