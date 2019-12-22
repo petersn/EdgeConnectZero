@@ -4,7 +4,7 @@ import itertools
 import numpy as np
 import UnionFind
 
-BOARD_RADIUS = 3
+BOARD_RADIUS = 5
 BOARD_SIZE = 2 * BOARD_RADIUS + 1
 
 NEXT_MOVE_STATE = {
@@ -259,7 +259,7 @@ class EdgeConnectState:
 
 	def featurize_board(self, symmetry):
 		symm_board = apply_symmetry_to_board(symmetry, self.board)
-		result = np.zeros((BOARD_SIZE, BOARD_SIZE, 9), np.float32)
+		result = np.zeros((BOARD_SIZE, BOARD_SIZE, 12), np.float32)
 		# Layer 0: All ones.
 		result[:, :, 0] = 1
 		# Layer 1: In bound cells.
@@ -277,6 +277,7 @@ class EdgeConnectState:
 		# Layer 8: Our last move, if we're on our second move.
 		if self.first_move_qr is not None:
 			result[self.first_move_qr[0], self.first_move_qr[1], 8] = 1
+		raise NotImplementedError
 		return result
 
 if __name__ == "__main__":

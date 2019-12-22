@@ -3,7 +3,7 @@
 #define EDGECONNECT_RULES_H
 
 #include <cassert>
-#include <map>
+#include <unordered_map>
 #include <set>
 #include <array>
 #include <iostream>
@@ -28,7 +28,7 @@ constexpr int STARTING_GAME_POSITION = 1234;
 constexpr int BOARD_RADIUS = 3;
 constexpr int BOARD_SIZE = 2 * BOARD_RADIUS + 1;
 constexpr int QR_COUNT = BOARD_SIZE * BOARD_SIZE;
-constexpr int FEATURE_COUNT = 9;
+constexpr int FEATURE_COUNT = 12;
 constexpr int FEATURE_MAP_LENGTH = BOARD_SIZE * BOARD_SIZE * FEATURE_COUNT;
 
 typedef uint8_t Cell;
@@ -177,7 +177,7 @@ struct EdgeConnectState {
 
 		// Make a copy of the cells to do captures in.
 		UnionFind<Move> uf = compute_union_find(cells);
-		std::map<UnionFind<Move>::NodeIndex, int> group_edge_count;
+		std::unordered_map<UnionFind<Move>::NodeIndex, int> group_edge_count;
 		for (Move m = 0; m < QR_COUNT; m++)
 			if (EDGE_CELLS_MASK[m])
 				group_edge_count[uf.find(m)]++;
@@ -188,7 +188,7 @@ struct EdgeConnectState {
 
 		// Compute group based adjustments.
 		UnionFind<Move> uf_with_captures = compute_union_find(cells_with_captures);
-		std::map<int, std::set<UnionFind<Move>::NodeIndex>> groups;
+		std::unordered_map<int, std::set<UnionFind<Move>::NodeIndex>> groups;
 		for (Move m = 0; m < QR_COUNT; m++)
 			if (VALID_CELLS_MASK[m])
 				groups[cells_with_captures[m]].insert(uf_with_captures.find(m));
@@ -227,6 +227,12 @@ struct EdgeConnectState {
 	}
 
 	void featurize(float* feature_buffer) const {
+		// Make a copy of the cells to do captures in.
+		UnionFind<Move> uf = compute_union_find(cells);
+		std::unordered_map<UnionFind<Move>::NodeIndex, int> group_edge_count;
+		for (Move m = 0; m < QR_COUNT; m++)
+			if (EDGE_CELLS_MASK[m])
+				group_edge_count[uf.find(m)]++;
 		for (int q = 0; q < BOARD_SIZE; q++) {
 			for (int r = 0; r < BOARD_SIZE; r++) {	
 				// Layer 0: All ones.
@@ -246,6 +252,11 @@ struct EdgeConnectState {
 				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 7)] = get_at(cells, q, r) == 3 - get_side();
 				// Layer 8: Our last move, if we're on our second move.
 				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 8)] = pack_qr(q, r) == first_move_qr;
+				// Layer 9, 10, 11: Groups with no edge cells, one edge cell, and two or more edge cells.
+				int edge_count = group_edge_count[uf.find(pack_qr(q, r))];
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 9)] = edge_count == 0 and get_at(cells, q, r) != 0;
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 10)] = edge_count == 1 and get_at(cells, q, r) != 0;
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 11)] = edge_count >= 2 and get_at(cells, q, r) != 0;
 			}
 		}
 	}

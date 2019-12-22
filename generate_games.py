@@ -54,7 +54,7 @@ def generate_game(args):
 		if not args.random_play:
 			m.play(board.to_move, selected_move)
 		board.make_move(selected_move)
-		if board.result() != None:
+		if board.result_with_early_stopping() != None:
 			break
 		if args.show_game:
 			print(board)
@@ -66,7 +66,7 @@ def generate_game(args):
 		if args.die_if_present and os.path.exists(args.die_if_present):
 			print("Exiting due to signal file!")
 			exit()
-	entry["result"] = board.result();
+	entry["result"] = board.result_with_early_stopping()
 	print("[%3i] Generated a %i ply game (%.2f avg steps) with result %r." % (
 		args.group_index,
 		len(entry["boards"]),
