@@ -277,7 +277,22 @@ class EdgeConnectState:
 		# Layer 8: Our last move, if we're on our second move.
 		if self.first_move_qr is not None:
 			result[self.first_move_qr[0], self.first_move_qr[1], 8] = 1
-		raise NotImplementedError
+
+		# TODO: Ask Taras what the right rules are for this.
+		uf = self.compute_group_union_find(symm_board)
+		# Find each group with only one cell.
+		group_edge_count = {}
+		for qr in ALL_EDGE_QR:
+			canonicalized = uf[qr]
+			if canonicalized not in group_edge_count:
+				group_edge_count[canonicalized] = 0
+			group_edge_count[canonicalized] += 1
+		group_edge_count_array = np.zeros_like(symm_board)
+		for qr in ALL_VALID_QR:
+			group_edge_count_array[qr] = group_edge_count.get(uf[qr], 0)
+		result[:, :, 9] = (group_edge_count_array == 0) & (symm_board != 0)
+		result[:, :, 10] = (group_edge_count_array == 1) & (symm_board != 0)
+		result[:, :, 11] = (group_edge_count_array >= 2) & (symm_board != 0)
 		return result
 
 if __name__ == "__main__":
