@@ -11,21 +11,12 @@ import tornado.web
 import tornado.websocket
 from tornado import gen
 
-ALL_VALID_QR = [
-    (0, 3), (0, 4), (0, 5), (0, 6), (1, 2), (1, 3),
-    (1, 4), (1, 5), (1, 6), (2, 1), (2, 2), (2, 3),
-    (2, 4), (2, 5), (2, 6), (3, 0), (3, 1), (3, 2),
-    (3, 3), (3, 4), (3, 5), (3, 6), (4, 0), (4, 1),
-    (4, 2), (4, 3), (4, 4), (4, 5), (5, 0), (5, 1),
-    (5, 2), (5, 3), (5, 4), (6, 0), (6, 1), (6, 2),
-    (6, 3),
-]
-
 class EngineThread(threading.Thread):
 	def __init__(self):
 		super().__init__()
 		engine.setup_evaluator()
-		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run1/models/model-037.npy")
+#		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run1/models/model-037.npy")
+		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run5-r=5-f=32-b=8/models/model-019.npy")
 		self.mcts = engine.MCTSEngine()
 		self.message_queue = queue.Queue()
 
@@ -45,7 +36,7 @@ class EngineThread(threading.Thread):
 			web_handler.update_queue.put({
 				"playerToMove": int(state.move_state[0]),
 				"playerMoveIndex": state.move_state[1],
-				"board": {qr: int(state.board[qr]) for qr in ALL_VALID_QR},
+				"board": {qr: int(state.board[qr]) for qr in edgeconnect_rules.ALL_VALID_QR},
 			})
 			#web_handler.player_to_move = 1
 			#web_handler.player_move_index = "a"
@@ -60,7 +51,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 		print("WebSocket opened to:", self)
 		self.player_to_move = 1
 		self.player_move_index = "b"
-		self.board = {qr: 0 for qr in ALL_VALID_QR}
+		self.board = {qr: 0 for qr in edgeconnect_rules.ALL_VALID_QR}
 		self.game_over = False
 		self.update_queue = queue.Queue()
 		self.send_update()
@@ -108,7 +99,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 			self.player_move_index = "win"
 			self.board = {
 				qr: int(final_board.board[qr] + (2 if final_board.board[qr] != self.board[qr] else 0))
-				for qr in ALL_VALID_QR
+				for qr in edgeconnect_rules.ALL_VALID_QR
 			}
 			self.game_over = True
 			self.send_update()
@@ -118,7 +109,7 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 			"kind": "board",
 			"board": {
 				",".join(map(str, qr)): self.board[qr]
-				for qr in ALL_VALID_QR
+				for qr in edgeconnect_rules.ALL_VALID_QR
 			},
 			"playerToMove": self.player_to_move,
 			"playerMoveIndex": self.player_move_index,

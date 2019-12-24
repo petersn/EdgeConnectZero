@@ -4,7 +4,7 @@ import itertools
 import numpy as np
 import UnionFind
 
-BOARD_RADIUS = 5
+BOARD_RADIUS = 3
 BOARD_SIZE = 2 * BOARD_RADIUS + 1
 
 NEXT_MOVE_STATE = {
@@ -23,6 +23,8 @@ for i in range(BOARD_RADIUS):
 		VALID_CELLS_MASK[i, j] = 0
 		VALID_CELLS_MASK[-i - 1, -j - 1] = 0
 ALL_VALID_QR = [qr for qr, mask in np.ndenumerate(VALID_CELLS_MASK) if mask]
+
+print("REF:", ALL_VALID_QR)
 
 SCORING_CELLS_MASK = np.zeros((BOARD_SIZE, BOARD_SIZE), np.int8)
 SCORING_CELLS_MASK[(0, -1), :] = 1
@@ -276,7 +278,8 @@ class EdgeConnectState:
 		result[:, :, 7] = symm_board == OTHER_PLAYER[self.move_state[0]]
 		# Layer 8: Our last move, if we're on our second move.
 		if self.first_move_qr is not None:
-			result[self.first_move_qr[0], self.first_move_qr[1], 8] = 1
+			fmqr = apply_symmetry_to_qr(symmetry, self.first_move_qr)
+			result[fmqr[0], fmqr[1], 8] = 1
 
 		# TODO: Ask Taras what the right rules are for this.
 		uf = self.compute_group_union_find(symm_board)
@@ -297,4 +300,5 @@ class EdgeConnectState:
 
 if __name__ == "__main__":
 	s = EdgeConnectState.initial()
+	print("VALID QR COUNT:", len(ALL_VALID_QR))
 

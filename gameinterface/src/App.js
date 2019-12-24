@@ -1,11 +1,34 @@
 import React from 'react';
 import './App.css';
 
-const BOARD_RADIUS = 3;
+const BOARD_RADIUS = 5;
 const BOARD_SIZE = 2 * BOARD_RADIUS + 1;
 const BOARD_SCALE_PX = 50;
 
-const ALL_VALID_QR = [
+const ALL_VALID_QR = [];
+const ALL_SCORING_QR = [];
+
+for (let q = 0; q < BOARD_SIZE; q++) {
+	for (let r = 0; r < BOARD_SIZE; r++) {
+		if (q + r < BOARD_RADIUS)
+			continue;
+		if ((BOARD_SIZE - q - 1) + (BOARD_SIZE - r - 1) < BOARD_RADIUS)
+			continue;
+		ALL_VALID_QR.push([q, r]);
+	}
+}
+
+for (let i = 0; i < BOARD_SIZE; i++) {
+	ALL_SCORING_QR.push([i, 0]);
+	ALL_SCORING_QR.push([0, i]);
+	ALL_SCORING_QR.push([i, BOARD_SIZE - 1]);
+	ALL_SCORING_QR.push([BOARD_SIZE - 1, i]);
+	ALL_SCORING_QR.push([i, BOARD_RADIUS - i]);
+	ALL_SCORING_QR.push([BOARD_SIZE - i - 1, BOARD_SIZE - (BOARD_RADIUS - i) - 1]);
+}
+ALL_SCORING_QR.push([BOARD_RADIUS, BOARD_RADIUS]);
+
+/*
     [0, 3], [0, 4], [0, 5], [0, 6], [1, 2], [1, 3],
     [1, 4], [1, 5], [1, 6], [2, 1], [2, 2], [2, 3],
     [2, 4], [2, 5], [2, 6], [3, 0], [3, 1], [3, 2],
@@ -21,6 +44,7 @@ const ALL_SCORING_QR = [
     [4, 5], [5, 0], [5, 4], [6, 0], [6, 1], [6, 2],
     [6, 3],
 ];
+*/
 
 function isScoringQr(qr) {
     for (let testQr of ALL_SCORING_QR)
@@ -134,18 +158,6 @@ class App extends React.Component {
     }
 
     onClick = (evt, qr) => {
-        /*
-        if (this.state.board.cells[qr] != 0)
-            return;
-        this.state.board.cells[qr] = this.state.board.playerToMove;
-        if (this.state.board.playerMoveIndex === 'a') {
-            this.state.board.playerMoveIndex = 'b';
-        } else {
-            this.state.board.playerToMove = 3 - this.state.board.playerToMove;
-            this.state.board.playerMoveIndex = 'a';
-        }
-        this.forceUpdate();
-        */
         this.ws.send(JSON.stringify({
             kind: 'click', qr
         }));

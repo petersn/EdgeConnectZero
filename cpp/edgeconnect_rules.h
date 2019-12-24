@@ -9,6 +9,7 @@
 #include <iostream>
 #include <vector>
 #include <cstdint>
+#include <string>
 
 #include "union_find.h"
 
@@ -42,21 +43,27 @@ enum Side {
 };
 
 static inline Move pack_qr(int q, int r) {
-	return q + r * BOARD_SIZE;
+	return q * BOARD_SIZE + r;
+}
+
+static std::pair<int, int> unpack_qr(Move m) {
+	return {m / BOARD_SIZE, m % BOARD_SIZE};
 }
 
 Cell& get_at(std::array<Cell, QR_COUNT>& board, int q, int r) {
-	return board[q + r * BOARD_SIZE];
+	return board[q * BOARD_SIZE + r];
 }
 
 const Cell& get_at(const std::array<Cell, QR_COUNT>& board, int q, int r) {
-	return board[q + r * BOARD_SIZE];
+	return board[q * BOARD_SIZE + r];
 }
 
 std::array<Cell, QR_COUNT> VALID_CELLS_MASK;
 std::array<Cell, QR_COUNT> SCORING_CELLS_MASK;
 std::array<Cell, QR_COUNT> EDGE_CELLS_MASK;
+#ifndef SWIG
 std::vector<std::vector<Move>> QR_NEIGHBORS(QR_COUNT);
+#endif
 
 bool coord_is_valid(int q, int r) {
 	if (not (0 <= q and q < BOARD_SIZE and 0 <= r and r < BOARD_SIZE))
@@ -163,8 +170,7 @@ struct EdgeConnectState {
 		assert(VALID_CELLS_MASK[m]);
 		assert(cells[m] == 0);
 		cells[m] = move_state <= 1 ? 1 : 2;
-		if (move_state % 2 == 0)
-			first_move_qr = m;
+		first_move_qr = move_state % 2 == 0 ? m : NO_MOVE;
 		move_state++;
 		move_state %= 4;
 	}
@@ -265,7 +271,25 @@ struct EdgeConnectState {
 		// Intentionally ignore the first_move_qr!
 		return cells == other.cells and move_state == other.move_state;
 	}
+
+	std::string serialize_board() {
+		std::vector<char> result;
+		result.push_back(move_state <= 1 ? '1' : '2');
+		result.push_back(move_state % 2 == 0 ? 'a' : 'b');
+		for (Move m = 0; m < QR_COUNT; m++)
+			if (VALID_CELLS_MASK[m])
+				result.push_back('0' + cells[m]);
+		return std::string(result.begin(), result.end());
+	}
 };
+
+static Move* size_t_to_Move_ptr_helper(size_t x) {
+	return reinterpret_cast<Move*>(x);
+}
+
+static float* size_t_to_float_ptr_helper(size_t x) {
+	return reinterpret_cast<float*>(x);
+}
 
 #endif
 

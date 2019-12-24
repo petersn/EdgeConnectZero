@@ -77,16 +77,6 @@ std::unordered_map<std::pair<int, int>, int, pair_hash> position_delta_layers {
 	{{ 2,  1}, 14}, {{ 2,  2}, 15},
 };
 
-std::vector<char> serialize_board_for_json(const EdgeConnectState& board) {
-	std::vector<char> result;
-	result.push_back(board.move_state <= 1 ? '1' : '2');
-	result.push_back(board.move_state % 2 == 0 ? 'a' : 'b');
-	for (Move m = 0; m < QR_COUNT; m++)
-		if (VALID_CELLS_MASK[m])
-			result.push_back('0' + board.cells[m]);
-	return result;
-}
-
 #if 0
 int get_board_result(const EdgeConnectState& board, Move* optional_moves_buffer=nullptr, int* optional_moves_count=nullptr) {
 	int p1_pieces = popcountll(board.pieces[PIECE::CROSS]);
@@ -582,9 +572,9 @@ json generate_game(int thread_id) {
 			selected_move = (*it).first;
 		}
 
-		std::vector<char> serialized_board = serialize_board_for_json(mcts.root_board);
-		std::string s(serialized_board.begin(), serialized_board.end());
-		entry["boards"].push_back(s);
+//		std::vector<char> serialized_board = serialize_board_for_json(mcts.root_board);
+//		std::string s(serialized_board.begin(), serialized_board.end());
+		entry["boards"].push_back(mcts.root_board.serialize_board());
 		entry["moves"].push_back(std::to_string(selected_move));
 		entry["evals"].push_back(mcts.root_node->get_overall_evaluation());
 		entry["dists"].push_back({});

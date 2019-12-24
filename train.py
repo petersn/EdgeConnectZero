@@ -89,9 +89,11 @@ def get_sample_from_entries(entries):
 				continue
 			move = parse_move(move)
 			assert board.board[move] == 0
-			desired_policy[
-				edgeconnect_rules.apply_symmetry_to_qr(symmetry, move)
-			] = probability
+			qr = edgeconnect_rules.apply_symmetry_to_qr(symmetry, move)
+			desired_policy[qr] = probability
+			# Assert that the location is unoccupied for both players.
+			assert features[qr[0], qr[1], 6] == 0
+			assert features[qr[0], qr[1], 7] == 0
 #			move = apply_symmetry_to_move(symmetry_index, move)
 #			engine.add_move_to_heatmap(desired_policy, move, probability)
 		assert abs(1 - desired_policy.sum()) < 1e-3

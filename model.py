@@ -7,7 +7,7 @@ from functools import reduce
 
 product = lambda l: reduce(lambda x, y: x * y, l, 1)
 
-BOARD_SIZE = 7
+BOARD_SIZE = 11
 MOVE_TYPES = 1
 
 class Network:
