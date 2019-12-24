@@ -267,9 +267,14 @@ class MCTSEdge:
 			len(self.child_node.outgoing_edges),
 		)
 
+#already_hit = set()
+
 class MCTSNode:
 	def __init__(self, board, parent=None):
 		self.board = board
+#		if board.to_string() in already_hit:
+#			raise ValueError("Repeat: %r" % (board.to_string(),))
+#		already_hit.add(board.to_string())
 		self.parent = parent
 		self.all_edge_visits = 0
 		self.outgoing_edges = {}
@@ -335,6 +340,14 @@ class MCTS:
 	def __init__(self, root_board, use_dirichlet_noise=False):
 		self.root_node = MCTSNode(root_board.copy())
 		self.use_dirichlet_noise = use_dirichlet_noise
+		self.transposition_table = {}
+
+	def new_node_with_transposition(self, board, parent):
+		if False:
+			return MCTSNode(board, parent=parent)
+		if board.to_string() not in self.transposition_table:
+			self.transposition_table[board.to_string()] = MCTSNode(board, parent=parent)
+		return self.transposition_table[board.to_string()]
 
 	def select_principal_variation(self, best=False):
 		node = self.root_node
@@ -385,7 +398,7 @@ class MCTS:
 				print(self.root_node.board.evaluations.value, file=sys.stderr)
 				print("Move:", move, file=sys.stderr)
 				raise e
-			new_node = MCTSNode(new_board, parent=node)
+			new_node = self.new_node_with_transposition(new_board, parent=node)
 			new_node.graph_name_suffix = to_move_name(move)
 			new_edge = node.outgoing_edges[move] = MCTSEdge(move, new_node, parent_node=node)
 			edges_on_path.append(new_edge)

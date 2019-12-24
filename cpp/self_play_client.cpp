@@ -358,23 +358,12 @@ namespace std {
 	};
 }
 
-std::unordered_map<EdgeConnectState, shared_ptr<MCTSNode>> transposition_table;
-
-shared_ptr<MCTSNode> create_node_with_transposition(const EdgeConnectState& board) {
-	auto it = transposition_table.find(board);
-	if (it == transposition_table.end()) {
-		shared_ptr<MCTSNode> new_node = std::make_shared<MCTSNode>(board);
-		transposition_table[board] = new_node;
-		return new_node;
-	}
-	return (*it).second;
-}
-
 struct MCTS {
 	int thread_id;
 	EdgeConnectState root_board;
 	bool use_dirichlet_noise;
 	shared_ptr<MCTSNode> root_node;
+	std::unordered_map<EdgeConnectState, shared_ptr<MCTSNode>> transposition_table;
 
 	MCTS(int thread_id, const EdgeConnectState& root_board, bool use_dirichlet_noise)
 		: thread_id(thread_id), root_board(root_board), use_dirichlet_noise(use_dirichlet_noise)
@@ -385,6 +374,16 @@ struct MCTS {
 	void init_from_scratch(const EdgeConnectState& root_board) {
 		root_node = std::make_shared<MCTSNode>(root_board);
 		root_node->populate_evals(thread_id, use_dirichlet_noise);
+	}
+
+	shared_ptr<MCTSNode> create_node_with_transposition(const EdgeConnectState& board) {
+		auto it = transposition_table.find(board);
+		if (it == transposition_table.end()) {
+			shared_ptr<MCTSNode> new_node = std::make_shared<MCTSNode>(board);
+			transposition_table[board] = new_node;
+			return new_node;
+		}
+		return (*it).second;
 	}
 
 	std::tuple<shared_ptr<MCTSNode>, Move, std::vector<MCTSEdge*>> select_principal_variation(bool best=false) {
