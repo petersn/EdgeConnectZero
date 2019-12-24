@@ -268,7 +268,6 @@ struct MCTSNode {
 	EdgeConnectState board;
 	bool evals_populated = false;
 	Evaluations evals;
-	shared_ptr<MCTSNode> parent;
 	int all_edge_visits = 0;
 	std::unordered_map<Move, MCTSEdge> outgoing_edges;
 
@@ -363,7 +362,7 @@ struct MCTS {
 	EdgeConnectState root_board;
 	bool use_dirichlet_noise;
 	shared_ptr<MCTSNode> root_node;
-	std::unordered_map<EdgeConnectState, shared_ptr<MCTSNode>> transposition_table;
+	std::unordered_map<EdgeConnectState, std::weak_ptr<MCTSNode>> transposition_table;
 
 	MCTS(int thread_id, const EdgeConnectState& root_board, bool use_dirichlet_noise)
 		: thread_id(thread_id), root_board(root_board), use_dirichlet_noise(use_dirichlet_noise)
@@ -383,7 +382,14 @@ struct MCTS {
 			transposition_table[board] = new_node;
 			return new_node;
 		}
-		return (*it).second;
+		// If the weak reference was collected then clear it out.
+		std::weak_ptr<MCTSNode>& cache_entry = (*it).second;
+		if (cache_entry.expired()) {
+			transposition_table.erase(it);
+			// This shouldn't be able to recurse again, because now we'll hit the top code path.
+			return create_node_with_transposition(board);
+		}
+		return std::shared_ptr<MCTSNode>(cache_entry);
 	}
 
 	std::tuple<shared_ptr<MCTSNode>, Move, std::vector<MCTSEdge*>> select_principal_variation(bool best=false) {
