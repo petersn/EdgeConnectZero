@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import functools
 import itertools
 import numpy as np
 import UnionFind
@@ -99,6 +100,7 @@ def small_rotate_board(board, direction):
 		new[tuple(qr)] = board[original_qr]
 	return new
 
+@functools.lru_cache(maxsize=1000000)
 def apply_symmetry_to_qr(symmetry, qr):
 	assert 0 <= symmetry < 12
 	do_flip  = symmetry >= 6
