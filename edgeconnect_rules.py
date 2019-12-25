@@ -162,8 +162,12 @@ class EdgeConnectState:
 		return state
 
 	def sanity_check(self):
-		if self.move_state[1] == "b" and self.board[self.first_move_qr] != self.move_state[0]:
-			return False
+		if self.move_state[1] == "b":
+			if self.first_move_qr is None:
+				if not np.all(self.board == 0):
+					return False
+			elif self.board[self.first_move_qr] != self.move_state[0]:
+				return False
 		# TODO: Add more checks here.
 		return True
 
