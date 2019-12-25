@@ -1,7 +1,7 @@
 import React from 'react';
 import './App.css';
 
-const BOARD_RADIUS = 5;
+const BOARD_RADIUS = 7;
 const BOARD_SIZE = 2 * BOARD_RADIUS + 1;
 const BOARD_SCALE_PX = 50;
 
@@ -126,7 +126,7 @@ class App extends React.Component {
             () => {
                 this.ws.send(JSON.stringify({kind: 'ping'}));
             },
-            250,
+            250000000,
         );
         this.ws.onmessage = (evt) => {
             const data = JSON.parse(evt.data);

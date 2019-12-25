@@ -5,7 +5,7 @@ import uai_interface
 #import ataxx_rules
 import edgeconnect_rules
 
-OPENING_DEPTH = 0
+OPENING_DEPTH = 2
 
 class UAIPlayer:
 	def __init__(self, cmd):
@@ -37,7 +37,7 @@ class UAIPlayer:
 		self.send("uainewgame\n")
 
 	def set_state(self, board):
-		self.send("position fen %s\n" % board.fen())
+		self.send("position fen %s\n" % board.to_string())
 
 	def move(self, move):
 		self.send("moves %s\n" % uai_interface.uai_encode_move(move))
@@ -69,8 +69,8 @@ class UAIPlayer:
 				break
 			lines.append(line)
 		s = "".join(lines)
-		s = s.replace("X", ataxx_rules.RED + "X" + ataxx_rules.ENDC)
-		s = s.replace("O", ataxx_rules.BLUE + "O" + ataxx_rules.ENDC)
+		s = s.replace("X", edgeconnect_rules.RED + "X" + edgeconnect_rules.ENDC)
+		s = s.replace("O", edgeconnect_rules.BLUE + "O" + edgeconnect_rules.ENDC)
 		return s
 
 def play_one_game(args, engine1, engine2, opening_moves):
@@ -88,25 +88,25 @@ def play_one_game(args, engine1, engine2, opening_moves):
 	}
 
 	players = [UAIPlayer(engine1), UAIPlayer(engine2)]
-	board = ataxx_rules.AtaxxState.initial()
+	board = edgeconnect_rules.EdgeConnectState.initial()
 	ply_number = 0
 
 	def print_state():
 		if args.show_games:
-			colorize = lambda do, s: ataxx_rules.RED + s + ataxx_rules.ENDC if do else s
+			colorize = lambda do, s: edgeconnect_rules.RED + s + edgeconnect_rules.ENDC if do else s
 			player_to_move = ply_number % 2 + 1
 			engine_name1 = colorize(player_to_move == 1, engine1[-1])
 			engine_name2 = colorize(player_to_move == 2, engine2[-1])
 			print()
 			print("======= Player %i move. %s - %s" % (player_to_move, engine_name1, engine_name2))
-			print("[%3i plies] Score: %2i - %2i" % (ply_number, board.board.count(1), board.board.count(2)))
-			print(board.fen())
+			print("[%3i plies] Score: %2i - %2i" % (ply_number, 0, 0))
+			print(board.to_string())
 			print(board)
 		else:
-			print("\r[%3i plies] Score: %2i - %2i " % (ply_number, board.board.count(1), board.board.count(2)), end=' ')
+			print("\r[%3i plies] Score: %2i - %2i " % (ply_number, 0, 0), end=' ')
 			sys.stdout.flush()
 
-	while board.result() == None:
+	while board.result_with_early_stopping() == None:
 		print_state()
 		# If there is only one legal move then force it.
 		if ply_number < len(opening_moves):
@@ -121,13 +121,13 @@ def play_one_game(args, engine1, engine2, opening_moves):
 		if args.show_games:
 			print("Move:", uai_interface.uai_encode_move(move))
 		try:
-			board.move(move)
+			board.make_move(move)
 		except Exception as e:
 			print("Exception:", e)
 			print(move)
 			print(board)
 			print(game)
-			print(board.fen())
+			print(board.to_string())
 			print(uai_interface.uai_encode_move(move))
 			raise e
 		game["moves"].append(move)
@@ -146,12 +146,12 @@ def play_one_game(args, engine1, engine2, opening_moves):
 	print("Killing all tiktaxx processes.")
 	os.system("killall -9 tiktaxx")
 
-	result = board.result()
+	result = board.result_with_early_stopping()
 	if result == None:
 		result = "invalid"
 	game["result"] = result
 	game["end_time"] = time.time()
-	game["final_score"] = board.board.count(1), board.board.count(2)
+#	game["final_score"] = board.compute_scores()[0]
 
 	print_state()
 	# Print a final newline to finish the line we're "\r"ing over and over.
@@ -174,7 +174,7 @@ def write_game_to_pgn(args, path, game, round_index=1):
 		print('[Plycount "%i"]' % (len(game["moves"]),), file=f)
 		result_string = {1: "1-0", 2: "0-1", "invalid": "1/2-1/2"}[game["result"]]
 		print('[Result "%s"]' % (result_string,), file=f)
-		print('[FinalScore "%i-%i"]' % game["final_score"], file=f)
+#		print('[FinalScore "%i-%i"]' % (game["final_score"][1], game["final_score"][2]), file=f)
 		print('[TimeControl "+%r"]' % (args.tc,), file=f)
 		print(file=f)
 		print(" ".join(map(uai_interface.uai_encode_move, game["moves"])), file=f)
@@ -188,12 +188,12 @@ def get_opening(args):
 		if not args.opening.strip():
 			return []
 		return [uai_interface.uai_decode_move(m.strip()) for m in args.opening.split(",")]
-	board = ataxx_rules.AtaxxState.initial()
+	board = edgeconnect_rules.EdgeConnectState.initial()
 	opening_moves = []
 	for _ in range(OPENING_DEPTH):
 		move = random.choice(board.legal_moves())
 		opening_moves.append(move)
-		board.move(move)
+		board.make_move(move)
 	return opening_moves
 
 if __name__ == "__main__":

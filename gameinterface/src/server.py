@@ -16,7 +16,9 @@ class EngineThread(threading.Thread):
 		super().__init__()
 		engine.setup_evaluator()
 #		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run1/models/model-037.npy")
-		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run5-r=5-f=32-b=8/models/model-019.npy")
+#		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run5-r=5-f=32-b=8/models/model-019.npy")
+#		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run6-r=3-f=32-b=4/models/model-030.npy")
+		engine.initialize_model("/home/snp/proj/EdgeConnectZero/run7-r=3-f=32-b=4-g=1000-v=1000-fixup-cpp/models/model-009.npy")
 		self.mcts = engine.MCTSEngine()
 		self.message_queue = queue.Queue()
 
@@ -27,7 +29,7 @@ class EngineThread(threading.Thread):
 			print("To string:", state.to_string())
 			self.mcts.set_state(state)
 			for _ in range(2):
-				move = self.mcts.genmove(2, use_weighted_exponent=5.0)
+				move = self.mcts.genmove(0.5, use_weighted_exponent=2.0)
 				print("Got move:", move)
 				state.make_move(move)
 				self.mcts.set_state(state)
@@ -92,6 +94,10 @@ class WebSocketHandler(tornado.websocket.WebSocketHandler):
 			self.player_move_index = new_values["playerMoveIndex"]
 			self.board = new_values["board"]
 			self.send_update()
+			state = self.make_state()
+			if state.result() is None:
+				engine_thread.message_queue.put((self, state))
+
 		if (not self.game_over) and self.make_state().result() is not None:
 			state = self.make_state()
 			scores, final_board = state.compute_scores()

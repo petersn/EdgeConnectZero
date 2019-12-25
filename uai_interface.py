@@ -11,6 +11,7 @@ def uai_encode_square(xy):
 
 def uai_encode_move(move):
 	return "%s-%s" % (move[0], move[1])
+	# ---
 	if move == "pass":
 		return "0000"
 	start, end = move
@@ -19,6 +20,9 @@ def uai_encode_move(move):
 	return "%s%s" % (uai_encode_square(start), uai_encode_square(end))
 
 def uai_decode_square(s):
+	x, y = s.split("-")
+	return int(x), int(y)
+	# ---
 	x, y = string.ascii_lowercase.index(s[0].lower()), int(s[1]) - 1
 	y = 6 - y
 	return x, y
@@ -43,7 +47,8 @@ def test():
 #test()
 
 def make_pair():
-	board = ataxx_rules.AtaxxState.initial()
+#	board = ataxx_rules.AtaxxState.initial()
+	board = edgeconnect_rules.EdgeConnectState.initial()
 	eng = engine.MCTSEngine()
 	if args.visits != None:
 #		eng.VISITS = args.visits
@@ -57,7 +62,7 @@ def main(args):
 		if line == "quit":
 			exit()
 		elif line == "uai":
-			print("id name AtaxxZero")
+			print("id name EdgeConnectZero")
 			print("id author Peter Schmidt-Nielsen")
 			print("uaiok")
 		elif line == "uainewgame":
@@ -67,10 +72,10 @@ def main(args):
 		elif line.startswith("moves "):
 			for move in line[6:].split():
 				move = uai_decode_move(move)
-				board.move(move)
+				board.make_move(move)
 			eng.set_state(board.copy())
 		elif line.startswith("position fen "):
-			board = ataxx_rules.AtaxxState.from_fen(line[13:])
+			board = edgeconnect_rules.EdgeConnectState.from_string(line[13:])
 			eng.set_state(board)
 			if args.show_game:
 				print("===", file=sys.stderr)
@@ -79,14 +84,14 @@ def main(args):
 			ms = int(line[12:])
 			ms -= args.safety_ms
 			if args.visits == None:
-				move = eng.genmove(ms * 1e-3, use_weighted_exponent=5.0)
+				move = eng.genmove(ms * 1e-3, use_weighted_exponent=2.0)
 			else:
 				# This is safe, because of the visit limit we set above.
-				move = eng.genmove(1000000.0, use_weighted_exponent=5.0)
+				move = eng.genmove(1000000.0, use_weighted_exponent=2.0)
 			print("bestmove %s" % (uai_encode_move(move),))
 			if args.show_game:
 				post_move_board = board.copy()
-				post_move_board.move(move)
+				post_move_board.make_move(move)
 				print(post_move_board, file=sys.stderr)
 		elif line == "showboard":
 			print(board)
@@ -95,8 +100,8 @@ def main(args):
 
 if __name__ == "__main__":
 	import engine
-	engine.model.Network.FILTERS = 128
-	engine.model.Network.BLOCK_COUNT = 12
+#	engine.model.Network.FILTERS = 128
+#	engine.model.Network.BLOCK_COUNT = 12
 
 	import argparse
 	parser = argparse.ArgumentParser()

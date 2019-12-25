@@ -5,7 +5,11 @@ import itertools
 import numpy as np
 import UnionFind
 
-BOARD_RADIUS = 3
+RED  = "\x1b[91m"
+BLUE = "\x1b[94m"
+ENDC = "\x1b[0m"
+
+BOARD_RADIUS = 7
 BOARD_SIZE = 2 * BOARD_RADIUS + 1
 
 NEXT_MOVE_STATE = {
@@ -25,7 +29,7 @@ for i in range(BOARD_RADIUS):
 		VALID_CELLS_MASK[-i - 1, -j - 1] = 0
 ALL_VALID_QR = [qr for qr, mask in np.ndenumerate(VALID_CELLS_MASK) if mask]
 
-print("REF:", ALL_VALID_QR)
+print(len(ALL_VALID_QR))
 
 SCORING_CELLS_MASK = np.zeros((BOARD_SIZE, BOARD_SIZE), np.int8)
 SCORING_CELLS_MASK[(0, -1), :] = 1
@@ -133,10 +137,11 @@ class EdgeConnectState:
 		return EdgeConnectState(np.zeros((BOARD_SIZE, BOARD_SIZE), np.int8))
 
 	def to_string(self):
-		return "%i%s%s" % (
+		return "%i%s%s-%s" % (
 			self.move_state[0],
 			self.move_state[1],
 			"".join(str(c) for qr, c in np.ndenumerate(self.board) if VALID_CELLS_MASK[qr]),
+			"0-0" if self.first_move_qr is None else "%i-%i" % self.first_move_qr,
 		)
 
 	@staticmethod
@@ -144,10 +149,22 @@ class EdgeConnectState:
 		state = EdgeConnectState.initial()
 		state.move_state = int(serialization[0]), serialization[1]
 		assert state.move_state in NEXT_MOVE_STATE
-		for c, qr in zip(serialization[2:], ALL_VALID_QR):
+		board_desc, fm_q, fm_r = serialization[2:].split("-")
+		assert len(board_desc) == len(ALL_VALID_QR)
+		for c, qr in zip(board_desc, ALL_VALID_QR):
 			state.board[qr] = int(c)
 			assert c in ("0", "1", "2")
+		if (fm_q, fm_r) == ("0", "0"):
+			self.first_move_qr = None
+		else
+			self.first_move_qr = int(fm_q), int(fm_r)
 		return state
+
+	def sanity_check(self):
+		if self.move_state[1] == "b" and self.board[self.first_move_qr] != self.move_state[0]:
+			return False
+		# TODO: Add more checks here.
+		return True
 
 	def _repr_svg_(self):
 		pixel_width = 1 + BOARD_SIZE * 20
@@ -169,6 +186,21 @@ class EdgeConnectState:
 			height=pixel_height,
 			objects="\n".join(objects),
 		)
+
+	def __str__(self):
+		return "\n".join(
+			(" " * y + " ".join(
+				{
+					0: ("o" if SCORING_CELLS_MASK[x, y] else ".")
+						if VALID_CELLS_MASK[x, y] else " ",
+					1: RED + "X" + ENDC,
+					2: BLUE + "O" + ENDC,
+				}[self.board[x, y]]
+				for x in range(BOARD_SIZE)
+			))[BOARD_RADIUS:]
+			for y in range(BOARD_SIZE)
+		)
+
 
 	def copy(self):
 		return EdgeConnectState(

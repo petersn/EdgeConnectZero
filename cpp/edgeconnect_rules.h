@@ -146,6 +146,10 @@ static UnionFind<Move> compute_union_find(const std::array<Cell, QR_COUNT>& cell
 	return uf;
 }
 
+static void add_string_to_end_of_vector(std::string s, std::vector<char> v) {
+	std::copy(s.begin(), s.end(), std::back_inserter(v));
+}
+
 struct EdgeConnectState {
 	std::array<Cell, QR_COUNT> cells{};
 	int move_state = 1;
@@ -279,6 +283,15 @@ struct EdgeConnectState {
 		for (Move m = 0; m < QR_COUNT; m++)
 			if (VALID_CELLS_MASK[m])
 				result.push_back('0' + cells[m]);
+		result.push_back('-');
+		if (first_move_qr == NO_MOVE) {
+			add_string_to_end_of_vector("0-0", result);
+		} else {
+			std::pair<int, int> qr = unpack_qr(first_move_qr);
+			add_string_to_end_of_vector(std::to_string(qr.first), result);
+			result.push_back('-');
+			add_string_to_end_of_vector(std::to_string(qr.second), result);
+		}
 		return std::string(result.begin(), result.end());
 	}
 };

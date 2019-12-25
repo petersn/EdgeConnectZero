@@ -62,6 +62,7 @@ def get_sample_from_entries(entries):
 #		to_move = 1 if ply % 2 == 0 else 2
 		#board = ataxx_rules.AtaxxState(entry["boards"][ply], to_move=to_move).copy()
 		board = edgeconnect_rules.EdgeConnectState.from_string(entry["boards"][ply])
+		assert board.sanity_check()
 		move  = entry["moves"][ply]
 		if move == "pass":
 			continue
@@ -84,9 +85,7 @@ def get_sample_from_entries(entries):
 		else:
 			distribution = entry["dists"][ply]
 		for move, probability in distribution.items():
-			if probability == 0:
-				print("YAY " * 100)
-				continue
+			assert probability != 0
 			move = parse_move(move)
 			assert board.board[move] == 0
 			qr = edgeconnect_rules.apply_symmetry_to_qr(symmetry, move)
