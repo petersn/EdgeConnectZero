@@ -1,6 +1,12 @@
 #!/usr/bin/python
 
+import resource
 import os, glob, signal, subprocess, socket, atexit, time
+
+def memory_bytes():
+	KiB = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss + \
+	      resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+	return KiB * 1024
 
 def count_games(paths):
 	total_games = 0
@@ -18,6 +24,10 @@ def kill(proc):
 	except Exception as e:
 		print("ERROR in kill:", e)
 	proc.kill()
+
+def emergency_shutdown():
+	print("=== Emergency shutdown! ===")
+	exit(1)
 
 def generate_games(model_number):
 	# Touch the games file to initialize it empty if it doesn't exist.
@@ -50,7 +60,10 @@ def generate_games(model_number):
 	# We now periodically check up on how many games we have.
 	while True:
 		game_count = count_games(index_to_games_paths(model_number))
-		print("Game count:", game_count)
+		MiB = memory_bytes() * 2**-20
+		if MiB > 10000:
+			emergency_shutdown()
+		print("Game count: %i -- Memory: %.2f MiB" % (game_count, memory_bytes))
 		time.sleep(10)
 		if game_count >= args.game_count:
 			break
