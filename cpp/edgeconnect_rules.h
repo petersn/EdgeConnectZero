@@ -146,7 +146,7 @@ static UnionFind<Move> compute_union_find(const std::array<Cell, QR_COUNT>& cell
 	return uf;
 }
 
-static void add_string_to_end_of_vector(std::string s, std::vector<char> v) {
+static void add_string_to_end_of_vector(std::string s, std::vector<char>& v) {
 	std::copy(s.begin(), s.end(), std::back_inserter(v));
 }
 

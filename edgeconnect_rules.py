@@ -156,7 +156,7 @@ class EdgeConnectState:
 			assert c in ("0", "1", "2")
 		if (fm_q, fm_r) == ("0", "0"):
 			self.first_move_qr = None
-		else
+		else:
 			self.first_move_qr = int(fm_q), int(fm_r)
 		return state
 
