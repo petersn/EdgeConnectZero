@@ -143,6 +143,8 @@ technically statistically biases the games slightly towards being shorter.)
 		print("Start time:", start)
 		generate_games(current_model_number)
 
+		generation_training_split_time = time.time()
+
 		print("=========================== Doing training:", old_model, "->", new_model)
 		# Figure out the directories of games to train on.
 		low_index = min(current_model_number, max(args.training_window_exclude + 1, current_model_number - args.training_window + 1))
@@ -163,6 +165,6 @@ technically statistically biases the games slightly towards being shorter.)
 		], close_fds=True)
 
 		end = time.time()
-		print("Total seconds for iteration:", end - start)
+		print("Total seconds for iteration:", end - start, "- Seconds to generate games:", (generation_training_split_time - start), "- Seconds to train:", (end - generation_training_split_time))
 		current_model_number += 1
 
