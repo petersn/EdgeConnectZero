@@ -63,7 +63,7 @@ def generate_games(model_number):
 		MiB = memory_bytes() * 2**-20
 		if MiB > 10000:
 			emergency_shutdown()
-		print("Game count: %i -- Memory: %.2f MiB" % (game_count, memory_bytes))
+		print("Game count: %i -- Memory: %.2f MiB" % (game_count, MiB))
 		time.sleep(10)
 		if game_count >= args.game_count:
 			break
