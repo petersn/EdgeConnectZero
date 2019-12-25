@@ -29,8 +29,6 @@ for i in range(BOARD_RADIUS):
 		VALID_CELLS_MASK[-i - 1, -j - 1] = 0
 ALL_VALID_QR = [qr for qr, mask in np.ndenumerate(VALID_CELLS_MASK) if mask]
 
-print(len(ALL_VALID_QR))
-
 SCORING_CELLS_MASK = np.zeros((BOARD_SIZE, BOARD_SIZE), np.int8)
 SCORING_CELLS_MASK[(0, -1), :] = 1
 SCORING_CELLS_MASK[:, (0, -1)] = 1
@@ -149,15 +147,18 @@ class EdgeConnectState:
 		state = EdgeConnectState.initial()
 		state.move_state = int(serialization[0]), serialization[1]
 		assert state.move_state in NEXT_MOVE_STATE
-		board_desc, fm_q, fm_r = serialization[2:].split("-")
+		if serialization.count("-") == 0:
+			board_desc, fm_q, fm_r = serialization[2:], "0", "0"
+		else:
+			board_desc, fm_q, fm_r = serialization[2:].split("-")
 		assert len(board_desc) == len(ALL_VALID_QR)
 		for c, qr in zip(board_desc, ALL_VALID_QR):
 			state.board[qr] = int(c)
 			assert c in ("0", "1", "2")
 		if (fm_q, fm_r) == ("0", "0"):
-			self.first_move_qr = None
+			state.first_move_qr = None
 		else:
-			self.first_move_qr = int(fm_q), int(fm_r)
+			state.first_move_qr = int(fm_q), int(fm_r)
 		return state
 
 	def sanity_check(self):
