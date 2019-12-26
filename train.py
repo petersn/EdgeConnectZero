@@ -80,8 +80,8 @@ def load_entries(paths):
 					continue
 				entries.append(json.loads(line))
 	# Double check that all of the entries are good.
-	print("Verifying", len(entries), "entries.")
-	for entry in entries:
+	print("Verifying ten random entries out of", len(entries))
+	for entry in random.sample(entries, 10):
 		board = edgeconnect_rules.EdgeConnectState.from_string(entry["boards"][-1])
 		move = parse_move(entry["moves"][-1])
 		board.make_move(move)
