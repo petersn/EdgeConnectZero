@@ -9,39 +9,6 @@ import uai_interface
 import engine
 import model
 
-"""
-def apply_symmetry(index, arr):
-	assert len(arr.shape) == 3 and arr.shape[:2] == (model.BOARD_SIZE, model.BOARD_SIZE)
-	assert index in range(8)
-	coin1, coin2, coin3 = index & 1, (index >> 1) & 1, (index >> 2) & 1
-	# Break views to avoid mutating our input.
-	arr = np.array(arr).copy()
-	if coin1:
-		arr = arr[::-1,:,:].copy()
-	if coin2:
-		arr = arr[:,::-1,:].copy()
-	if coin3:
-		arr = np.swapaxes(arr.copy(), 0, 1).copy()
-	return arr
-
-def apply_symmetry_to_move(index, move):
-	assert index in range(8)
-	coin1, coin2, coin3 = index & 1, (index >> 1) & 1, (index >> 2) & 1
-	def apply_to_coord(xy):
-		x, y = xy
-		if coin1:
-			x = (model.BOARD_SIZE - 1) - x
-		if coin2:
-			y = (model.BOARD_SIZE - 1) - y
-		if coin3:
-			x, y = y, x
-		return x, y
-	start, end = move
-	if start == "c":
-		return "c", apply_to_coord(end)
-	return apply_to_coord(start), apply_to_coord(end)
-"""
-
 def parse_move(move):
 	if isinstance(move, str):
 		if "-" in move:
@@ -171,6 +138,18 @@ if __name__ == "__main__":
 	print("Have %i augmented samples, and sampling %i in total." % (ply_count * 12, args.steps * args.minibatch_size))
 	print("=== BEGINNING TRAINING ===")
 
+	minibatch_queue = queue.Queue()
+	def worker_thread():
+		print("Starting worker thread.")
+		while True:
+			if minibatch_queue.qsize() > 100:
+				print("Sleeping.")
+				time.sleep(0.5)
+			minibatch = make_minibatch(train_entries, args.minibatch_size)
+			minibatch_queue.put(minibatch)
+	worker_thread = threading.Thread(target=worker_thread)
+	worker_thread.start()
+
 	# Begin training.
 	for step_number in range(args.steps):
 		if step_number % 100 == 0:
@@ -183,7 +162,8 @@ if __name__ == "__main__":
 				policy_loss,
 				value_loss,
 			))
-		minibatch = make_minibatch(train_entries, args.minibatch_size)
+#		minibatch = make_minibatch(train_entries, args.minibatch_size)
+		minibatch = minibatch_queue.get()
 		network.train(minibatch, learning_rate=args.learning_rate)
 
 	# Write out the trained model.
