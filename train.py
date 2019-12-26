@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import os, glob, json, random, queue, threading
+import os, glob, json, random, queue, threading, multiprocessing
 import tensorflow as tf
 import numpy as np
 #import ataxx_rules
@@ -8,6 +8,10 @@ import edgeconnect_rules
 import uai_interface
 import engine
 import model
+
+#generation_mode = "PLAIN"
+#generation_mode = "THREADS"
+generation_mode = "PROCESSES"
 
 def parse_move(move):
 	if isinstance(move, str):
@@ -131,24 +135,45 @@ if __name__ == "__main__":
 
 	# Choose the test set deterministically.
 	random.seed(123456789)
-	in_sample_val_set = make_minibatch(test_entries, 2048)
+	in_sample_val_set = make_minibatch(test_entries, 1024)
 
 	print()
 	print("Model dimensions: %i filters, %i blocks, %i parameters." % (model.Network.FILTERS, model.Network.BLOCK_COUNT, network.total_parameters))
 	print("Have %i augmented samples, and sampling %i in total." % (ply_count * 12, args.steps * args.minibatch_size))
 	print("=== BEGINNING TRAINING ===")
 
-	minibatch_queue = queue.Queue()
-	def worker_thread():
-		print("Starting worker thread.")
-		while True:
-			if minibatch_queue.qsize() > 100:
-				print("Sleeping.")
-				time.sleep(0.5)
-			minibatch = make_minibatch(train_entries, args.minibatch_size)
-			minibatch_queue.put(minibatch)
-	worker_thread = threading.Thread(target=worker_thread)
-	worker_thread.start()
+	if generation_mode == "THREADS":
+		minibatch_queue = queue.Queue()
+		def worker_thread():
+			print("Starting worker thread.")
+			while True:
+				if minibatch_queue.qsize() > 100:
+					print("Sleeping.")
+					time.sleep(0.5)
+				minibatch = make_minibatch(train_entries, args.minibatch_size)
+				minibatch_queue.put(minibatch)
+		worker_thread = threading.Thread(target=worker_thread)
+		worker_thread.start()
+	elif generation_mode == "PROCESSES":
+		minibatch_queue = multiprocessing.Queue()
+		def worker_process(seed, m_queue, size):
+			random.seed(seed)
+			while True:
+				if m_queue.qsize() > 100:
+					time.sleep(0.1)
+				minibatch = make_minibatch(train_entries, size)
+				m_queue.put(minibatch)
+		processes = []
+		for _ in range(4):
+			p = multiprocessing.Process(
+				target=worker_process,
+				args=(random.getrandbits(64), minibatch_queue, args.minibatch_size),
+			)
+			p.daemon = True
+			p.start()
+			processes.append(p)
+	else:
+		assert generation_mode == "PLAIN"
 
 	# Begin training.
 	for step_number in range(args.steps):
@@ -162,8 +187,10 @@ if __name__ == "__main__":
 				policy_loss,
 				value_loss,
 			))
-#		minibatch = make_minibatch(train_entries, args.minibatch_size)
-		minibatch = minibatch_queue.get()
+		if generation_mode == "PLAIN":
+			minibatch = make_minibatch(train_entries, args.minibatch_size)
+		else:
+			minibatch = minibatch_queue.get()
 		network.train(minibatch, learning_rate=args.learning_rate)
 
 	# Write out the trained model.
