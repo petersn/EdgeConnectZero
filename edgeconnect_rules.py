@@ -164,9 +164,12 @@ class EdgeConnectState:
 	def sanity_check(self):
 		if self.move_state[1] == "b":
 			if self.first_move_qr is None:
-				if not np.all(self.board == 0):
-					return False
+				pass
+#				if not np.all(self.board == 0):
+#					print("FAIL BEGINNING " * 100)
+#					return False
 			elif self.board[self.first_move_qr] != self.move_state[0]:
+				print("FAIL CLEAR " * 100)
 				return False
 		# TODO: Add more checks here.
 		return True
@@ -339,5 +342,5 @@ class EdgeConnectState:
 
 if __name__ == "__main__":
 	s = EdgeConnectState.initial()
-	print("VALID QR COUNT:", len(ALL_VALID_QR))
+	print("BOARD RADIUS:", BOARD_RADIUS, "VALID QR COUNT:", len(ALL_VALID_QR))
 

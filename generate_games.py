@@ -35,7 +35,7 @@ def generate_game(args):
 					raise e
 			else:
 				# Do steps until the root is sufficiently visited.
-				most_visits = 0 
+				most_visits = 0
 				while most_visits < args.visit_count and m.root_node.all_edge_visits < args.visit_count * MAX_STEP_RATIO:
 					all_steps += 1
 					edge = m.step()
@@ -54,7 +54,7 @@ def generate_game(args):
 		if not args.random_play:
 			m.play(board.to_move, selected_move)
 		board.make_move(selected_move)
-		if board.result_with_early_stopping() != None:
+		if board.result() != None:
 			break
 		if args.show_game:
 			print(board)
@@ -66,7 +66,7 @@ def generate_game(args):
 		if args.die_if_present and os.path.exists(args.die_if_present):
 			print("Exiting due to signal file!")
 			exit()
-	entry["result"] = board.result_with_early_stopping()
+	entry["result"] = board.result()
 	print("[%3i] Generated a %i ply game (%.2f avg steps) with result %r." % (
 		args.group_index,
 		len(entry["boards"]),

@@ -42,7 +42,15 @@ def get_sample_from_entries(entries):
 		features = board.featurize_board(symmetry) #engine.board_to_features(board)
 		assert entry["result"] in (1, 2)
 		assert board.move_state[0] in (1, 2)
-		desired_value = [1 if entry["result"] == board.move_state[0] else -1]
+
+		# The entry["evals"] ranges from 0 to 1, and is the win rate for
+		# the current player. We need to remap this to -1 to 1.
+		scored_game_value = 1 if entry["result"] == board.move_state[0] else -1
+		if "evals" in entry:
+			mcts_value = entry["evals"][ply] * 2 - 1
+			desired_value = [0.5 * mcts_value + 0.5 * scored_game_value]
+		else:
+			desired_value = [scored_game_value]
 		# Apply a dihedral symmetry.
 #		symmetry_index = random.randrange(8)
 #		features = apply_symmetry(symmetry_index, features)
@@ -80,8 +88,8 @@ def load_entries(paths):
 					continue
 				entries.append(json.loads(line))
 	# Double check that all of the entries are good.
-	print("Verifying ten random entries out of", len(entries))
-	for entry in random.sample(entries, 10):
+	print("Verifying", len(entries), "entries.")
+	for entry in entries:
 		board = edgeconnect_rules.EdgeConnectState.from_string(entry["boards"][-1])
 		move = parse_move(entry["moves"][-1])
 		board.make_move(move)
@@ -99,7 +107,7 @@ if __name__ == "__main__":
 	parser.add_argument("--old-path", metavar="PATH", help="Path for input network.")
 	parser.add_argument("--new-path", metavar="PATH", required=True, help="Path for output network.")
 	parser.add_argument("--steps", metavar="COUNT", type=int, default=1000, help="Training steps.")
-	parser.add_argument("--minibatch-size", metavar="COUNT", type=int, default=128, help="Minibatch size.")
+	parser.add_argument("--minibatch-size", metavar="COUNT", type=int, default=256, help="Minibatch size.")
 	parser.add_argument("--learning-rate", metavar="LR", type=float, default=0.001, help="Learning rate.")
 	args = parser.parse_args()
 	print("Arguments:", args)

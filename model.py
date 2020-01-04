@@ -4,10 +4,10 @@ import sys
 import numpy as np
 import tensorflow as tf
 from functools import reduce
+from edgeconnect_rules import BOARD_SIZE
 
 product = lambda l: reduce(lambda x, y: x * y, l, 1)
 
-BOARD_SIZE = 9
 MOVE_TYPES = 1
 
 class Network:
@@ -15,7 +15,7 @@ class Network:
 	NONLINEARITY = [tf.nn.relu]
 	FILTERS = 32
 	CONV_SIZE = 3
-	BLOCK_COUNT = 4
+	BLOCK_COUNT = 12
 	VALUE_FILTERS = 1
 #	VALUE_FC_SIZES = [BOARD_SIZE * BOARD_SIZE * VALUE_FILTERS, 32, 1]
 	POLICY_OUTPUT_SHAPE = [None, BOARD_SIZE, BOARD_SIZE, MOVE_TYPES]

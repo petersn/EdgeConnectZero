@@ -26,7 +26,7 @@ int stride_index(int x, int y, int z) {
 
 constexpr int STARTING_GAME_POSITION = 1234;
 
-constexpr int BOARD_RADIUS = 3;
+constexpr int BOARD_RADIUS = 7;
 constexpr int BOARD_SIZE = 2 * BOARD_RADIUS + 1;
 constexpr int QR_COUNT = BOARD_SIZE * BOARD_SIZE;
 constexpr int FEATURE_COUNT = 12;

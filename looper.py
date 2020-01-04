@@ -60,10 +60,11 @@ def generate_games(model_number):
 	# We now periodically check up on how many games we have.
 	while True:
 		game_count = count_games(index_to_games_paths(model_number))
-		MiB = memory_bytes() * 2**-20
-		if MiB > 10000:
-			emergency_shutdown()
-		print("Game count: %i -- Memory: %.2f MiB" % (game_count, MiB))
+#		MiB = memory_bytes() * 2**-20
+#		if MiB > 10000:
+#			emergency_shutdown()
+#		print("Game count: %i -- Memory: %.2f MiB" % (game_count, MiB))
+		print("Game count: %i" % (game_count,))
 		time.sleep(10)
 		if game_count >= args.game_count:
 			break
@@ -117,10 +118,10 @@ technically statistically biases the games slightly towards being shorter.)
 		formatter_class=Formatter,
 	)
 	parser.add_argument("--prefix", metavar="PATH", default=".", help="Prefix directory. Make sure this directory contains games/ and models/ subdirectories.")
-	parser.add_argument("--visits", metavar="N", type=int, default=400, help="At each move in the self-play games perform MCTS until the root node has N visits.")
+	parser.add_argument("--visits", metavar="N", type=int, default=600, help="At each move in the self-play games perform MCTS until the root node has N visits.")
 	parser.add_argument("--game-count", metavar="N", type=int, default=500, help="Minimum number of games to generate per iteration.")
-	parser.add_argument("--training-steps-const", metavar="N", type=int, default=200, help="Base number of training steps to perform per iteration.")
-	parser.add_argument("--training-steps-linear", metavar="N", type=int, default=50, help="We also apply an additional N steps for each additional iteration included in the training window.")
+	parser.add_argument("--training-steps-const", metavar="N", type=int, default=400, help="Base number of training steps to perform per iteration.")
+	parser.add_argument("--training-steps-linear", metavar="N", type=int, default=100, help="We also apply an additional N steps for each additional iteration included in the training window.")
 	parser.add_argument("--training-window", metavar="N", type=int, default=10, help="When training include games from the past N iterations.")
 	parser.add_argument("--training-window-exclude", metavar="N", type=int, default=3, help="To help things get started faster we exclude games from the very first N iterations from later training game windows.")
 	parser.add_argument("--parallel-games-processes", metavar="N", type=int, default=1, help="Number of games processes to run in parallel.")
@@ -161,7 +162,6 @@ technically statistically biases the games slightly towards being shorter.)
 				"--games"] + games_paths + [
 				"--old-path", old_model,
 				"--new-path", new_model,
-				"--minibatch-size", "64",
 		], close_fds=True)
 
 		end = time.time()

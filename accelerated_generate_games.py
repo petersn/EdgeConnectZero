@@ -1,6 +1,8 @@
 #!/usr/bin/python
 
 import sys, signal, time, argparse
+import edgeconnect_rules
+import model
 import ctypes
 import numpy as np
 import engine
@@ -17,14 +19,14 @@ parser = argparse.ArgumentParser(
 parser.add_argument("--network", metavar="PATH", required=True, help="Path of the model to load.")
 parser.add_argument("--output-games", metavar="PATH", required=True, help="Path to write .json games to. Writes in append mode, so it won't overwrite existing games.")
 parser.add_argument("--visits", metavar="N", type=int, default=100, help="At each move in the self-play games perform MCTS until the root node has N visits.")
-parser.add_argument("--buffer-size", metavar="N", type=int, default=32, help="Use a buffer that evaluates N samples in parallel on the GPU. Requires that we launch 2*N threads each playing a parallel game, and thus have memory usage proportional to N.")
+parser.add_argument("--buffer-size", metavar="N", type=int, default=128, help="Use a buffer that evaluates N samples in parallel on the GPU. Requires that we launch 2*N threads each playing a parallel game, and thus have memory usage proportional to N.")
 args = parser.parse_args()
 print("Arguments:", args)
 
 engine.initialize_model(args.network)
 
 work_buffers = [
-	np.zeros((args.buffer_size, 7, 7, 9), dtype=np.float32)
+	np.zeros((args.buffer_size, edgeconnect_rules.BOARD_SIZE, edgeconnect_rules.BOARD_SIZE, model.Network.INPUT_FEATURE_COUNT), dtype=np.float32)
 	for _ in (0, 1)
 ]
 link.launch_threads(
