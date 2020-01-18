@@ -1,22 +1,33 @@
 #!/usr/bin/python
 
-import sys
+import sys, time
 import numpy as np
 import tensorflow as tf
 from functools import reduce
-from edgeconnect_rules import BOARD_SIZE
+from edgeconnect_rules import BOARD_SIZE, BOARD_RADIUS
 
 product = lambda l: reduce(lambda x, y: x * y, l, 1)
 
 MOVE_TYPES = 1
 
+def set_dtype(dtype):
+	global DTYPE, NP_DTYPE
+	DTYPE = dtype
+	NP_DTYPE = {
+		tf.float16: np.float16,
+		tf.float32: np.float32,
+	}[DTYPE]
+
+set_dtype(tf.float32)
+
 class Network:
 	INPUT_FEATURE_COUNT = 12
 	NONLINEARITY = [tf.nn.relu]
-	FILTERS = 32
+	FILTERS = 64
 	CONV_SIZE = 3
 	BLOCK_COUNT = 12
 	VALUE_FILTERS = 1
+	VALUE_FC_SIZE = 32
 #	VALUE_FC_SIZES = [BOARD_SIZE * BOARD_SIZE * VALUE_FILTERS, 32, 1]
 	POLICY_OUTPUT_SHAPE = [None, BOARD_SIZE, BOARD_SIZE, MOVE_TYPES]
 	VALUE_OUTPUT_SHAPE = [None, 1]
@@ -42,18 +53,21 @@ class Network:
 			shape=[None, BOARD_SIZE, BOARD_SIZE, self.INPUT_FEATURE_COUNT],
 			name="input_placeholder")
 		self.desired_policy_ph = tf.placeholder(
-			tf.float32,
+			DTYPE,
 			shape=self.POLICY_OUTPUT_SHAPE,
 			name="desired_policy_placeholder")
 		self.desired_value_ph = tf.placeholder(
-			tf.float32,
+			DTYPE,
 			shape=self.VALUE_OUTPUT_SHAPE,
 			name="desired_value_placeholder")
-		self.learning_rate_ph = tf.placeholder(tf.float32, shape=[], name="learning_rate")
+		self.learning_rate_ph = tf.placeholder(DTYPE, shape=[], name="learning_rate")
 		self.is_training_ph = tf.placeholder(tf.bool, shape=[], name="is_training")
+
 		# Begin constructing the data flow.
 		self.parameters = []
 		self.flow = self.input_ph
+		if DTYPE == tf.float16:
+			self.flow = tf.cast(self.flow, tf.float16)
 		# Stack an initial convolution.
 		self.stack_convolution(self.CONV_SIZE, self.INPUT_FEATURE_COUNT, self.FILTERS)
 		self.stack_nonlinearity()
@@ -68,15 +82,23 @@ class Network:
 		self.policy_output = tf.nn.conv2d(self.flow, weights, strides=[1, 1, 1, 1], padding="SAME")
 #		self.policy_output = tf.reshape(self.policy_output, [-1, BOARD_SIZE * BOARD_SIZE, MOVE_TYPES])
 #		self.policy_output = tf.matrix_transpose(self.policy_output)
+		if DTYPE == tf.float16:
+			self.policy_output = tf.cast(self.policy_output, tf.float32)
 
 	def build_value_head(self):
 		weights = self.new_weight_variable([1, 1, self.FILTERS, self.VALUE_FILTERS])
 		value_layer = tf.nn.conv2d(self.flow, weights, strides=[1, 1, 1, 1], padding="SAME")
 		value_layer = tf.reshape(value_layer, [-1, BOARD_SIZE * BOARD_SIZE * self.VALUE_FILTERS])
-		fc_w = self.new_weight_variable([BOARD_SIZE * BOARD_SIZE, 1])
-		fc_b = self.new_bias_variable([1])
-		self.value_output = tf.matmul(value_layer, fc_w) + fc_b
-		self.value_output = tf.nn.tanh(self.value_output)
+
+		fc_w1 = self.new_weight_variable([BOARD_SIZE * BOARD_SIZE, self.VALUE_FC_SIZE])
+		fc_b1 = self.new_bias_variable([self.VALUE_FC_SIZE])
+		value_hidden = self.NONLINEARITY[0](tf.matmul(value_layer, fc_w1) + fc_b1)
+
+		fc_w2 = self.new_weight_variable([self.VALUE_FC_SIZE, 1])
+		fc_b2 = self.new_bias_variable([1])
+		self.value_output = tf.nn.tanh(tf.matmul(value_hidden, fc_w2) + fc_b2)
+		if DTYPE == tf.float16:
+			self.value_output = tf.cast(self.value_output, tf.float32)
 
 	def build_training(self):
 		# Make policy head loss.
@@ -103,13 +125,13 @@ class Network:
 	def new_weight_variable(self, shape):
 		self.total_parameters += product(shape)
 		stddev = 0.2 * (2.0 / product(shape[:-1]))**0.5
-		var = tf.Variable(tf.truncated_normal(shape, stddev=stddev))
+		var = tf.Variable(tf.truncated_normal(shape, stddev=stddev, dtype=DTYPE), dtype=DTYPE)
 		self.parameters.append(var)
 		return var
 
 	def new_bias_variable(self, shape):
 		self.total_parameters += product(shape)
-		var = tf.Variable(tf.constant(0.01, shape=shape))
+		var = tf.Variable(tf.constant(0.001, shape=shape, dtype=DTYPE), dtype=DTYPE)
 		self.parameters.append(var)
 		return var
 
@@ -142,13 +164,13 @@ class Network:
 		self.stack_nonlinearity()
 
 	def train(self, samples, learning_rate):
-		self.run_on_samples(self.train_step.run, samples, learning_rate=learning_rate, is_training=True)
+		self.run_on_samples(self.train_step, samples, learning_rate=learning_rate, is_training=True)
 
 	def get_loss(self, samples):
-		return self.run_on_samples(self.loss.eval, samples)
+		return self.run_on_samples(self.loss, samples)
 
 	def get_accuracy(self, samples):
-		results = self.run_on_samples(self.final_output.eval, samples).reshape((-1, 64 * 64))
+		results = self.run_on_samples(self.final_output, samples).reshape((-1, 64 * 64))
 		#results = results.reshape((-1, 64 * 8 * 8))
 		results = np.argmax(results, axis=-1)
 		assert results.shape == (len(samples["features"]),)
@@ -160,7 +182,7 @@ class Network:
 		return correct / float(len(samples["features"]))
 
 	def run_on_samples(self, f, samples, learning_rate=0.01, is_training=False):
-		return f(feed_dict={
+		return sess.run(f, feed_dict={
 			self.input_ph:          samples["features"],
 			self.desired_policy_ph: samples["policies"],
 			self.desired_value_ph:  samples["values"],
@@ -195,8 +217,43 @@ def load_model(net, path):
 		operations.append(var.assign(value))
 	sess.run(operations)
 
+class EWMA:
+	def __init__(self):
+		self.value = 0
+		self.alpha = 0.995
+
+	def update(self, x):
+		self.value = self.alpha * self.value + (1 - self.alpha) * x
+
 if __name__ == "__main__":
+	set_dtype(tf.float16)
 	net = Network("net/")
-	print(get_batch_norm_vars(net))
-	print(net.total_parameters)
+#	print(get_batch_norm_vars(net))
+	print("Parameter count:", net.total_parameters)
+	sess = tf.Session()
+	sess.run(tf.global_variables_initializer())
+	load_model(net, "run-cm5-r=11-f=64-b=12-fc=32-g=500-v=800-distl-t0/models/model-060.npy")
+	batch_size = 64
+	block_input = np.random.randn(batch_size, BOARD_SIZE, BOARD_SIZE, Network.INPUT_FEATURE_COUNT).astype(NP_DTYPE)
+	print("block_input:", block_input.dtype, block_input.shape, block_input.strides, block_input.flags.c_contiguous)
+	print("Warming up.")
+	for _ in range(10):
+		sess.run((net.policy_output, net.value_output), feed_dict={net.input_ph: block_input, net.is_training_ph: False})
+	print("Main run.")
+	COUNT = 200
+	delay = EWMA()
+	start = time.time()
+	for _ in range(COUNT):
+		rs = time.time()
+		sess.run((net.policy_output, net.value_output), feed_dict={net.input_ph: block_input, net.is_training_ph: False})
+		delay.update(time.time() - rs)
+	end = time.time()
+	print("Took:", end - start)
+	rate = batch_size * COUNT / (end - start)
+	print("Evaluation rate:", rate)
+
+	summary_string = f"dtype={DTYPE} batch_size={batch_size:3} board_radius={BOARD_RADIUS} filters={net.FILTERS} blocks={net.BLOCK_COUNT} evals/s={rate} delay={1e3 * delay.value:.2}ms"
+	print(summary_string)
+	with open("bench", "a+") as f:
+		print(summary_string, file=f)
 

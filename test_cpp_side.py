@@ -1,11 +1,13 @@
 #!/usr/bin/python
 
 import hashlib
-from tqdm import tqdm
+#from tqdm import tqdm
 import numpy as np
 import random
 import edgeconnect_rules
 import cpp.edgeconnect_rules as cpp_edgeconnect_rules
+
+tqdm = lambda x: x
 
 random.seed(1)
 

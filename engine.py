@@ -1,5 +1,9 @@
 #!/usr/bin/python3
 
+#import model
+#model.set_dtype(model.tf.float32)
+#model.set_dtype(model.tf.float16)
+
 import logging, time, sys, random, collections
 import numpy as np
 import tensorflow as tf
@@ -9,9 +13,11 @@ import model
 import uai_interface
 #import nn_evals
 
+#logging.getLogger().setLevel(logging.DEBUG)
+
 RED  = "\x1b[91m"
 ENDC = "\x1b[0m"
-DIRICHLET_ALPHA  = 0.15
+DIRICHLET_ALPHA  = 0.15 # This should really be 0.03, but for consistency I need to keep testing at 0.15
 DIRICHLET_WEIGHT = 0.25
 
 initialized = False
@@ -20,7 +26,9 @@ def initialize_model(path):
 	global network, sess, initialized
 	assert not initialized
 	network = model.Network("net/", build_training=False)
-	sess = tf.InteractiveSession()
+	config = tf.ConfigProto()
+	config.gpu_options.allow_growth=True
+	sess = tf.Session(config=config)
 	sess.run(tf.initialize_all_variables())
 	model.sess = sess
 	model.load_model(network, path)
@@ -134,10 +142,13 @@ def add_dirichlet_noise_to_posterior(posterior, alpha, weight):
 	return posterior
 
 class NNEvaluator:
-	ENSEMBLE_SIZE = 32
-	QUEUE_DEPTH = 4096
-	PROBABILITY_THRESHOLD = 0.15
-	MAXIMUM_CACHE_ENTRIES = 200000
+	ENSEMBLE_SIZE = 1 #32
+	QUEUE_DEPTH = 1 #4096
+	PROBABILITY_THRESHOLD = 10.15
+#	ENSEMBLE_SIZE = 32
+#	QUEUE_DEPTH = 4096
+#	PROBABILITY_THRESHOLD = 0.15
+	MAXIMUM_CACHE_ENTRIES = 10000
 
 	class Entry:
 		__slots__ = ["board", "value", "posterior", "noisy_posterior", "game_over"]
@@ -608,7 +619,9 @@ if __name__ == "__main__":
 #	initialize_model("models/96x12-sample.npy")
 #	initialize_model("/tmp/model-177.npy")
 #	initialize_model("/home/snp/proj/.AtaxxZero_with_changes/run1/models/model-004.npy")
-	initialize_model("/home/snp/proj/EdgeConnectZero/run1/models/model-037.npy")
+#	initialize_model("/home/snp/proj/EdgeConnectZero/run1/models/model-037.npy")
+#	initialize_model("run14-r=7-f=32-b=8-g=500-v=800-no-distl/models/model-015.npy")
+	initialize_model("run-cm5-r=11-f=64-b=12-fc=32-g=500-v=800-distl-t0/models/model-060.npy")
 	setup_evaluator()
 	engine = MCTSEngine()
 	for _ in range(2):

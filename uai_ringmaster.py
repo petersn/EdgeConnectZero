@@ -5,7 +5,7 @@ import uai_interface
 #import ataxx_rules
 import edgeconnect_rules
 
-OPENING_DEPTH = 2
+OPENING_DEPTH = 0
 
 class UAIPlayer:
 	def __init__(self, cmd):
@@ -13,7 +13,7 @@ class UAIPlayer:
 		# WARNING: What I'm doing here is technically invalid!
 		# In theory the output pipe of this process could fill up before I read, making it hang.
 		# TODO: Decide if I care.
-		self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+		self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open("/dev/null"))
 #		atexit.register(self.proc.kill)
 		self.send("uai\n")
 		self.send("setoption name Hash value 1024\n")
@@ -94,7 +94,7 @@ def play_one_game(args, engine1, engine2, opening_moves):
 	def print_state():
 		if args.show_games:
 			colorize = lambda do, s: edgeconnect_rules.RED + s + edgeconnect_rules.ENDC if do else s
-			player_to_move = ply_number % 2 + 1
+			player_to_move = ((ply_number + 1) // 2) % 2
 			engine_name1 = colorize(player_to_move == 1, engine1[-1])
 			engine_name2 = colorize(player_to_move == 2, engine2[-1])
 			print()
@@ -117,7 +117,8 @@ def play_one_game(args, engine1, engine2, opening_moves):
 			move, = board.legal_moves()
 		else:
 			ms = int(args.tc * 1000)
-			move = players[ply_number % 2].genmove(ms)
+			which_player = ((ply_number + 1) // 2) % 2
+			move = players[which_player].genmove(ms)
 		if args.show_games:
 			print("Move:", uai_interface.uai_encode_move(move))
 		try:
@@ -233,12 +234,19 @@ if __name__ == "__main__":
 #				def too_low(s):
 #					s = " ".join(s)
 #					return any(("model-%03i" % i) in s for i in xrange(38))
+				pre_filter = len(pairings)
 				pairings = [
 					(a, b)
 					for a, b in pairings
+#					if not ("cm3" in " ".join(a) and "cm3" in " ".join(b))
 #					if ("005-pre2" in " ".join(a) or "005-pre2" in " ".join(b) or "ataxx-engine" in " ".join(a) or "ataxx-engine" in " ".join(b)) or
-#						(abs(get_model_number(a) - get_model_number(b)) <= 10 and (get_model_number(a) > 0 or get_model_number(b) > 0))
+					if
+						(abs(get_model_number(a) - get_model_number(b)) <= 5 and (get_model_number(a) > 0 or get_model_number(b) > 0)) and
+#						(get_model_number(a) <= 5 and get_model_number(b) <= 5)
+						(get_model_number(a) > 86 or get_model_number(b) > 86) and
+						True
 				]
+				print("Dropping down from %i -> %i" % (pre_filter, len(pairings)))
 			random.shuffle(pairings)
 			for pairing in pairings:
 				opening = get_opening(args)

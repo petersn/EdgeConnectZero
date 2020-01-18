@@ -65,7 +65,7 @@ def generate_games(model_number):
 #			emergency_shutdown()
 #		print("Game count: %i -- Memory: %.2f MiB" % (game_count, MiB))
 		print("Game count: %i" % (game_count,))
-		time.sleep(10)
+		time.sleep(30)
 		if game_count >= args.game_count:
 			break
 
@@ -123,7 +123,7 @@ technically statistically biases the games slightly towards being shorter.)
 	parser.add_argument("--training-steps-const", metavar="N", type=int, default=400, help="Base number of training steps to perform per iteration.")
 	parser.add_argument("--training-steps-linear", metavar="N", type=int, default=100, help="We also apply an additional N steps for each additional iteration included in the training window.")
 	parser.add_argument("--training-window", metavar="N", type=int, default=10, help="When training include games from the past N iterations.")
-	parser.add_argument("--training-window-exclude", metavar="N", type=int, default=3, help="To help things get started faster we exclude games from the very first N iterations from later training game windows.")
+	parser.add_argument("--training-window-exclude", metavar="N", type=int, default=0, help="To help things get started faster we exclude games from the very first N iterations from later training game windows.")
 	parser.add_argument("--parallel-games-processes", metavar="N", type=int, default=1, help="Number of games processes to run in parallel.")
 	args = parser.parse_args()
 	print("Arguments:", args)

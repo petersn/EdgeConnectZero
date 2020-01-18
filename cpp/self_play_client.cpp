@@ -30,11 +30,11 @@ using std::cout;
 using std::endl;
 
 constexpr double exploration_parameter = 1.0;
-constexpr double dirichlet_alpha = 0.15;
+constexpr double dirichlet_alpha = 0.03;
 constexpr double dirichlet_weight = 0.25;
-constexpr int maximum_game_plies = 400;
+constexpr int maximum_game_plies = 10000;
 const std::vector<double> opening_randomization_schedule {
-	0.2, 0.2, 0.1, 0.1, 0.05, 0.05, 0.025, 0.025, 0.0125, 0.0125,
+	0.05, 0.025, 0.025, 0.0125, 0.0125,
 };
 
 std::random_device rd;
@@ -196,7 +196,7 @@ struct Evaluations {
 		}
 
 		// Evaluate movegen.
-		Move legal_moves[256];
+		Move legal_moves[512];
 		int num_moves = board.legal_moves(legal_moves);
 		double total_probability = 0.0;
 		for (int i = 0; i < num_moves; i++) {
@@ -520,6 +520,25 @@ Move sample_proportionally_to_visits(const shared_ptr<MCTSNode>& node) {
 	return (*node->outgoing_edges.begin()).first;
 }
 
+Move sample_most_visited_move(const shared_ptr<MCTSNode>& node) {
+	int most_visits = -1;
+	Move best_move = NO_MOVE;
+	for (const std::pair<Move, MCTSEdge>& p : node->outgoing_edges) {
+		if (p.second.edge_visits > most_visits) {
+			best_move = p.first;
+			most_visits = p.second.edge_visits;
+		}
+	}
+	assert(best_move != NO_MOVE);
+	return best_move;
+}
+
+double ply_to_temperature(unsigned int ply) {
+	// In the AlphaGo Zero paper they use a temperature of 1 for the first 30 plies, then 0 thereafter.
+	assert(false);
+	return 0.0;
+}
+
 json generate_game(int thread_id) {
 	EdgeConnectState board;
 //	set_board(board, STARTING_GAME_POSITION);
@@ -539,7 +558,11 @@ json generate_game(int thread_id) {
 			steps_done++;
 		}
 		// Sample a move according to visit counts.
-		Move selected_move = sample_proportionally_to_visits(mcts.root_node);
+		Move selected_move;
+		if (ply <= 30)
+			selected_move = sample_proportionally_to_visits(mcts.root_node);
+		else
+			selected_move = sample_most_visited_move(mcts.root_node);
 
 #ifdef ONE_RANDOM_MOVE
 		// If we're AT the randomization point then instead pick a uniformly random legal move.
@@ -565,7 +588,6 @@ json generate_game(int thread_id) {
 			}
 		}
 #endif
-
 
 		// If appropriate choose a uniformly random legal move in the opening.
 		if (ply < opening_randomization_schedule.size() and

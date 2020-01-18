@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import os, glob, json, random, queue, threading, multiprocessing
+import os, time, glob, json, random, queue, threading, multiprocessing
 import tensorflow as tf
 import numpy as np
 #import ataxx_rules
@@ -46,7 +46,7 @@ def get_sample_from_entries(entries):
 		# The entry["evals"] ranges from 0 to 1, and is the win rate for
 		# the current player. We need to remap this to -1 to 1.
 		scored_game_value = 1 if entry["result"] == board.move_state[0] else -1
-		if "evals" in entry:
+		if "evals" in entry and True:
 			mcts_value = entry["evals"][ply] * 2 - 1
 			desired_value = [0.5 * mcts_value + 0.5 * scored_game_value]
 		else:
@@ -88,8 +88,8 @@ def load_entries(paths):
 					continue
 				entries.append(json.loads(line))
 	# Double check that all of the entries are good.
-	print("Verifying", len(entries), "entries.")
-	for entry in entries:
+	print("Verifying 100 random entries out of", len(entries))
+	for entry in random.sample(entries, 100):
 		board = edgeconnect_rules.EdgeConnectState.from_string(entry["boards"][-1])
 		move = parse_move(entry["moves"][-1])
 		board.make_move(move)
@@ -107,7 +107,7 @@ if __name__ == "__main__":
 	parser.add_argument("--old-path", metavar="PATH", help="Path for input network.")
 	parser.add_argument("--new-path", metavar="PATH", required=True, help="Path for output network.")
 	parser.add_argument("--steps", metavar="COUNT", type=int, default=1000, help="Training steps.")
-	parser.add_argument("--minibatch-size", metavar="COUNT", type=int, default=256, help="Minibatch size.")
+	parser.add_argument("--minibatch-size", metavar="COUNT", type=int, default=512, help="Minibatch size.")
 	parser.add_argument("--learning-rate", metavar="LR", type=float, default=0.001, help="Learning rate.")
 	args = parser.parse_args()
 	print("Arguments:", args)
@@ -122,7 +122,9 @@ if __name__ == "__main__":
 	train_entries = entries[10:]
 
 	network = model.Network("training_net/", build_training=True)
-	sess = tf.InteractiveSession()
+	config = tf.ConfigProto()
+	config.gpu_options.allow_growth=True
+	sess = tf.Session(config=config)
 	sess.run(tf.initialize_all_variables())
 	model.sess = sess
 
@@ -172,7 +174,7 @@ if __name__ == "__main__":
 				minibatch = make_minibatch(train_entries, size)
 				m_queue.put(minibatch)
 		processes = []
-		for _ in range(4):
+		for _ in range(16):
 			p = multiprocessing.Process(
 				target=worker_process,
 				args=(random.getrandbits(64), minibatch_queue, args.minibatch_size),
@@ -183,12 +185,15 @@ if __name__ == "__main__":
 	else:
 		assert generation_mode == "PLAIN"
 
+#	print("Testing.")
+#	for _ in range(10):
+#		minibatch_queue.get()
+#	print("Minibatch generation working.")
+
 	# Begin training.
 	for step_number in range(args.steps):
 		if step_number % 100 == 0:
-			policy_loss = network.run_on_samples(network.policy_loss.eval, in_sample_val_set)
-			value_loss  = network.run_on_samples(network.value_loss.eval, in_sample_val_set)
-#			loss = network.get_loss(in_sample_val_set)
+			policy_loss, value_loss = network.run_on_samples((network.policy_loss, network.value_loss), in_sample_val_set)
 			print("Step: %4i -- loss: %.6f  (policy: %.6f  value: %.6f)" % (
 				step_number,
 				policy_loss + value_loss,

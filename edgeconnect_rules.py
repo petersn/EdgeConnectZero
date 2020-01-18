@@ -9,7 +9,7 @@ RED  = "\x1b[91m"
 BLUE = "\x1b[94m"
 ENDC = "\x1b[0m"
 
-BOARD_RADIUS = 7
+BOARD_RADIUS = 11
 BOARD_SIZE = 2 * BOARD_RADIUS + 1
 
 NEXT_MOVE_STATE = {

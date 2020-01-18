@@ -1,8 +1,11 @@
 #!/usr/bin/python
 
+import model
+#model.set_dtype(model.tf.float32)
+model.set_dtype(model.tf.float16)
+
 import sys, signal, time, argparse
 import edgeconnect_rules
-import model
 import ctypes
 import numpy as np
 import engine
@@ -53,9 +56,38 @@ averaging_window = 1000
 # We have to keep references to recent arrays around so the C++ side doesn't accidentally try to read from them after they become invalid.
 recent_arrays = []
 
+class EWMA:
+	def __init__(self):
+		self.value = 0
+		self.alpha = 0.995
+
+	def update(self, x):
+		self.value = self.alpha * self.value + (1 - self.alpha) * x
+
+get_workload_delays = EWMA()
+sess_run_delays = EWMA()
+complete_workload_delays = EWMA()
+convert_to_delays = EWMA()
+convert_from_delays = EWMA()
+
+#for work_buffer in work_buffers:
+#	print("Work buffer:", work_buffer.dtype, work_buffer.shape, work_buffer.strides, work_buffer.flags.c_contiguous)
+
+#block_input = np.random.randn(128, 23, 23, engine.network.INPUT_FEATURE_COUNT)
+
 while True:
+	start = time.time()
 	workload_index = link.get_workload()
+	get_workload_delays.update(time.time() - start)
+
+	start = time.time()
 	features = work_buffers[workload_index]
+#	features = work_buffers[workload_index].astype(np.float16)
+#	assert features.flags.c_contiguous
+	convert_to_delays.update(time.time() - start)
+#	features = block_input
+
+	start = time.time()
 	posteriors, values = engine.sess.run(
 		[engine.network.policy_output, engine.network.value_output],
 		feed_dict={
@@ -63,6 +95,15 @@ while True:
 			engine.network.is_training_ph: False,
 		},
 	)
+#	if "posteriors" not in globals():
+#		posteriors = np.random.randn(128, 23, 23, 1).astype(np.float32)
+#		values = np.random.random((128, 1)).astype(np.float32)
+	sess_run_delays.update(time.time() - start)
+	if False:
+		start = time.time()
+		posteriors = posteriors.astype(np.float32)
+		values = values.astype(np.float32)
+		convert_from_delays.update(time.time() - start)
 	assert posteriors.dtype == np.float32
 	assert posteriors.flags.c_contiguous
 	assert values.dtype == np.float32
@@ -70,15 +111,22 @@ while True:
 	recent_arrays.append((posteriors, values))
 	# XXX: TODO: Worry a lot about whether or not `work_buffers`, `posteriors` and `values` are packed contiguously with the right stride ordering!
 	# I don't currently check this, and this is really important.
+	start = time.time()
 	link.complete_workload(workload_index, ctypes.c_void_p(posteriors.ctypes.data), ctypes.c_void_p(values.ctypes.data))
+	complete_workload_delays.update(time.time() - start)
 
 	workload_times.append(time.time())
 	span = workload_times[-averaging_window:]
 	rate = (len(span) - 1.0) / (span[-1] - span[0])
-	if len(workload_times) % 1000 == 0:
-		print("Rate: %.3fk evals/s  (Total: %ik)" % (
+	if len(workload_times) % 2000 == 0:
+		print("Rate: %.3fk evals/s  (Total: %ik) get_workload: %.3fms - sess.run: %.3fms - complete_workload: %.3fms - fp32->fp16: %.3fms fp16->fp32: %.3fms" % (
 			rate * args.buffer_size * 1e-3,
 			len(workload_times) * args.buffer_size * 1e-3,
+			1e3 * get_workload_delays.value,
+			1e3 * sess_run_delays.value,
+			1e3 * complete_workload_delays.value,
+			1e3 * convert_to_delays.value,
+			1e3 * convert_from_delays.value,
 		))
 
 	# Technically keeping just the two most recent should be sufficient to avoid any issues.

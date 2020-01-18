@@ -3,7 +3,7 @@ CXXFLAGS=-std=c++17 -g -Wall -Wextra -pthread -fPIC -I/usr/local/cuda/include -L
 CXXFLAGS+=-O3 -ffast-math -flto `pkg-config --cflags --libs python3`
 #LIBS=-lcublas -lcudnn -lcudart
 
-all: self_play_client.so _edgeconnect_rules.so
+all: self_play_client.so mcts.so #_edgeconnect_rules.so
 
 #engine_main #fast_server self_play_client
 
@@ -11,6 +11,9 @@ self_play_client: self_play_client.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
 self_play_client.so: self_play_client.o
+	$(CXX) $(CXXFLAGS) -shared -Wl,-soname,$@ -o $@ $^ $(LIBS)
+
+mcts.so: mcts.o
 	$(CXX) $(CXXFLAGS) -shared -Wl,-soname,$@ -o $@ $^ $(LIBS)
 
 fast_server: fast_server.o

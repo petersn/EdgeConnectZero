@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys, string
+import sys, string, random
 #import ataxx_rules
 import edgeconnect_rules
 
@@ -83,7 +83,9 @@ def main(args):
 		elif line.startswith("go movetime "):
 			ms = int(line[12:])
 			ms -= args.safety_ms
-			if args.visits == None:
+			if args.play_randomly:
+				move = random.choice(board.legal_moves())
+			elif args.visits == None:
 				move = eng.genmove(ms * 1e-3, use_weighted_exponent=2.0)
 			else:
 				# This is safe, because of the visit limit we set above.
@@ -109,6 +111,7 @@ if __name__ == "__main__":
 	parser.add_argument("--visits", metavar="VISITS", default=None, type=int, help="Number of visits during MCTS.")
 	parser.add_argument("--safety-ms", metavar="MS", default=0, type=int, help="Number of milliseconds to shave off of each movetime for safety.")
 	parser.add_argument("--show-game", action="store_true", help="Show the game on stderr.")
+	parser.add_argument("--play-randomly", action="store_true", help="Actually just play uniformly at random.")
 	args = parser.parse_args()
 	print(args, file=sys.stderr)
 
