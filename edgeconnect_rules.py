@@ -252,18 +252,25 @@ class EdgeConnectState:
 
 	def apply_captures(self):
 		# TODO: Ask Taras what the right rules are for this.
-		uf = self.compute_group_union_find(self.board)
-		# Find each group with only one cell.
-		group_edge_count = {}
-		for qr in ALL_EDGE_QR:
-			canonicalized = uf[qr]
-			if canonicalized not in group_edge_count:
-				group_edge_count[canonicalized] = 0
-			group_edge_count[canonicalized] += 1
-		result_board = self.board.copy()
-		for qr in ALL_VALID_QR:
-			if group_edge_count.get(uf[qr], 0) <= 1:
-				result_board[qr] = OTHER_PLAYER[result_board[qr]]
+		board = self.board
+		while True:
+			uf = self.compute_group_union_find(board)
+			# Find each group with only one cell.
+			group_edge_count = {}
+			for qr in ALL_EDGE_QR:
+				canonicalized = uf[qr]
+				if canonicalized not in group_edge_count:
+					group_edge_count[canonicalized] = 0
+				group_edge_count[canonicalized] += 1
+			result_board = board.copy()
+			made_changes = False
+			for qr in ALL_VALID_QR:
+				if group_edge_count.get(uf[qr], 0) <= 1:
+					result_board[qr] = OTHER_PLAYER[result_board[qr]]
+					made_changes = True
+			if not made_changes:
+				break
+			board = result_board
 		return result_board
 
 	def compute_scores(self):

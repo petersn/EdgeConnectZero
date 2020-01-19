@@ -131,7 +131,7 @@ struct Evaluations {
 //		Move moves_buffer[256];
 //		int num_moves;
 //		int result = get_board_result(board, moves_buffer, &num_moves);
-		int result = board.result();
+		int result = board.result_with_early_stopping();
 
 		if (result != 0) {
 			game_over = true;

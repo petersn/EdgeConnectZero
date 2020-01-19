@@ -186,15 +186,22 @@ struct EdgeConnectState {
 				return Side::NOBODY;
 
 		// Make a copy of the cells to do captures in.
-		UnionFind<Move> uf = compute_union_find(cells);
-		std::unordered_map<UnionFind<Move>::NodeIndex, int> group_edge_count;
-		for (Move m = 0; m < QR_COUNT; m++)
-			if (EDGE_CELLS_MASK[m])
-				group_edge_count[uf.find(m)]++;
 		std::array<Cell, QR_COUNT> cells_with_captures = cells;
-		for (Move m = 0; m < QR_COUNT; m++)
-			if (VALID_CELLS_MASK[m] and group_edge_count[uf.find(m)] <= 1)
-				cells_with_captures[m] = 3 - cells_with_captures[m];
+		bool keep_going = true;
+		while (keep_going) {
+			UnionFind<Move> uf = compute_union_find(cells_with_captures);
+			std::unordered_map<UnionFind<Move>::NodeIndex, int> group_edge_count;
+			for (Move m = 0; m < QR_COUNT; m++)
+				if (EDGE_CELLS_MASK[m])
+					group_edge_count[uf.find(m)]++;
+			keep_going = false;
+			for (Move m = 0; m < QR_COUNT; m++) {
+				if (VALID_CELLS_MASK[m] and group_edge_count[uf.find(m)] <= 1) {
+					cells_with_captures[m] = 3 - cells_with_captures[m];
+					keep_going = true;
+				}
+			}
+		}
 
 		// Compute group based adjustments.
 		UnionFind<Move> uf_with_captures = compute_union_find(cells_with_captures);
