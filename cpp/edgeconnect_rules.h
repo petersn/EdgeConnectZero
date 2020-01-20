@@ -64,6 +64,7 @@ std::array<Cell, QR_COUNT> EDGE_CELLS_MASK;
 #ifndef SWIG
 std::vector<std::vector<Move>> QR_NEIGHBORS(QR_COUNT);
 #endif
+std::vector<std::vector<Move>> MOVE_SYMMETRY_LOOKUP;
 
 bool coord_is_valid(int q, int r) {
 	if (not (0 <= q and q < BOARD_SIZE and 0 <= r and r < BOARD_SIZE))
@@ -78,6 +79,28 @@ void debug_print(const std::array<Cell, QR_COUNT>& a) {
 		}
 		std::cout << std::endl;
 	}
+}
+
+Move apply_symmetry_to_move_slow(int symmetry, Move m) {
+	std::pair<int, int> qr = unpack_qr(m);
+	assert(coord_is_valid(qr.first, qr.second));
+	assert(0 <= symmetry and symmetry < 12);
+	bool do_flip = symmetry >= 6;
+	int rotation = symmetry % 6;
+	if (do_flip)
+		qr = {qr.second, qr.first};
+	qr.first  -= BOARD_RADIUS;
+	qr.second -= BOARD_RADIUS;
+	for (int i = 0; i < rotation; i++) {
+		qr = {
+			qr.first + qr.second,
+			-qr.first,
+		};
+	}
+	qr.first += BOARD_RADIUS;
+	qr.second += BOARD_RADIUS;
+	assert(coord_is_valid(qr.first, qr.second));
+	return pack_qr(qr.first, qr.second);
 }
 
 static void edgeconnect_initialize_structures() {
@@ -134,6 +157,17 @@ static void edgeconnect_initialize_structures() {
 			}
 		}
 	}
+
+	for (int symmetry = 0; symmetry < 12; symmetry++) {
+		MOVE_SYMMETRY_LOOKUP.emplace_back(QR_COUNT);
+		for (Move m = 0; m < QR_COUNT; m++) {
+			if (not VALID_CELLS_MASK[m]) {
+				MOVE_SYMMETRY_LOOKUP.back()[m] = m;
+				continue;
+			}
+			MOVE_SYMMETRY_LOOKUP.back()[m] = apply_symmetry_to_move_slow(symmetry, m);
+		}
+	}
 };
 
 static UnionFind<Move> compute_union_find(const std::array<Cell, QR_COUNT>& cells) {
@@ -187,6 +221,7 @@ struct EdgeConnectState {
 
 		// Make a copy of the cells to do captures in.
 		std::array<Cell, QR_COUNT> cells_with_captures = cells;
+		int iteration_count = 0;
 		bool keep_going = true;
 		while (keep_going) {
 			UnionFind<Move> uf = compute_union_find(cells_with_captures);
@@ -201,6 +236,7 @@ struct EdgeConnectState {
 					keep_going = true;
 				}
 			}
+			assert(iteration_count++ < 100);
 		}
 
 		// Compute group based adjustments.
@@ -243,9 +279,12 @@ struct EdgeConnectState {
 		return Side::NOBODY;
 	}
 
-	void featurize(float* feature_buffer) const {
-		// Make a copy of the cells to do captures in.
-		UnionFind<Move> uf = compute_union_find(cells);
+	void featurize(int symmetry, float* feature_buffer) const {
+		std::array<Cell, QR_COUNT> symmetrized_cells;
+		const auto& symmetry_table = MOVE_SYMMETRY_LOOKUP[symmetry];
+		for (Move m = 0; m < QR_COUNT; m++)
+			symmetrized_cells[symmetry_table[m]] = cells[m];
+		UnionFind<Move> uf = compute_union_find(symmetrized_cells);
 		std::unordered_map<UnionFind<Move>::NodeIndex, int> group_edge_count;
 		for (Move m = 0; m < QR_COUNT; m++)
 			if (EDGE_CELLS_MASK[m])
@@ -264,16 +303,16 @@ struct EdgeConnectState {
 				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 4)] = move_state % 2 == 0;
 				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 5)] = move_state % 2 == 1;
 				// Layer 6: Our stones.
-				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 6)] = get_at(cells, q, r) == get_side();
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 6)] = get_at(symmetrized_cells, q, r) == get_side();
 				// Layer 7: Their stones.
-				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 7)] = get_at(cells, q, r) == 3 - get_side();
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 7)] = get_at(symmetrized_cells, q, r) == 3 - get_side();
 				// Layer 8: Our last move, if we're on our second move.
-				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 8)] = pack_qr(q, r) == first_move_qr;
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 8)] = pack_qr(q, r) == symmetry_table[first_move_qr];
 				// Layer 9, 10, 11: Groups with no edge cells, one edge cell, and two or more edge cells.
 				int edge_count = group_edge_count[uf.find(pack_qr(q, r))];
-				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 9)] = edge_count == 0 and get_at(cells, q, r) != 0;
-				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 10)] = edge_count == 1 and get_at(cells, q, r) != 0;
-				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 11)] = edge_count >= 2 and get_at(cells, q, r) != 0;
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 9)] = edge_count == 0 and get_at(symmetrized_cells, q, r) != 0;
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 10)] = edge_count == 1 and get_at(symmetrized_cells, q, r) != 0;
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 11)] = edge_count >= 2 and get_at(symmetrized_cells, q, r) != 0;
 			}
 		}
 	}

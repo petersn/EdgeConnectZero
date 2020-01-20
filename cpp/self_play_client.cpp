@@ -145,8 +145,9 @@ struct Evaluations {
 			return;
 		}
 
+		int random_symmetry = std::uniform_int_distribution<int>{0, 11}(generator);
 		float feature_buffer[FEATURE_MAP_LENGTH] = {};
-		board.featurize(feature_buffer);
+		board.featurize(random_symmetry, feature_buffer);
 
 /*
 		// Build a features map, initialized to all zeros.
@@ -186,7 +187,7 @@ struct Evaluations {
 		// Softmax the posterior array.
 		double softmaxed[BOARD_SIZE * BOARD_SIZE];
 		for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++)
-			softmaxed[i] = exp(posterior_array[i]);
+			softmaxed[i] = exp(posterior_array[MOVE_SYMMETRY_LOOKUP[random_symmetry][i]]);
 		double total = 0.0;
 		for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++)
 			total += softmaxed[i];
