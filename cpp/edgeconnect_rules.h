@@ -307,7 +307,7 @@ struct EdgeConnectState {
 				// Layer 7: Their stones.
 				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 7)] = get_at(symmetrized_cells, q, r) == 3 - get_side();
 				// Layer 8: Our last move, if we're on our second move.
-				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 8)] = pack_qr(q, r) == symmetry_table[first_move_qr];
+				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 8)] = (first_move_qr != NO_MOVE) and pack_qr(q, r) == symmetry_table[first_move_qr];
 				// Layer 9, 10, 11: Groups with no edge cells, one edge cell, and two or more edge cells.
 				int edge_count = group_edge_count[uf.find(pack_qr(q, r))];
 				feature_buffer[stride_index<BOARD_SIZE, BOARD_SIZE, FEATURE_COUNT>(q, r, 9)] = edge_count == 0 and get_at(symmetrized_cells, q, r) != 0;

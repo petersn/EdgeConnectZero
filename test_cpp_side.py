@@ -1,13 +1,13 @@
 #!/usr/bin/python
 
 import hashlib
-#from tqdm import tqdm
+from tqdm import tqdm
 import numpy as np
 import random
 import edgeconnect_rules
 import cpp.edgeconnect_rules as cpp_edgeconnect_rules
 
-tqdm = lambda x: x
+#tqdm = lambda x: x
 
 random.seed(1)
 
@@ -32,9 +32,9 @@ def get_legal_moves(cpp_board):
 	assert move_count <= len(moves_array)
 	return [int(m) for m in moves_array[:move_count]]
 
-def get_features(cpp_board):
+def get_features(symmetry, cpp_board):
 	features = np.zeros(cpp_edgeconnect_rules.FEATURE_MAP_LENGTH, np.float32)
-	cpp_board.featurize(cpp_edgeconnect_rules.size_t_to_float_ptr_helper(features.ctypes.data))
+	cpp_board.featurize(symmetry, cpp_edgeconnect_rules.size_t_to_float_ptr_helper(features.ctypes.data))
 	return features
 
 def assert_equal(x, y):
@@ -61,8 +61,9 @@ def assert_synchronized(board, cpp_board):
 	assert_equal(cpp_legal_moves, board.legal_moves())
 
 	# Test the featurizations.
-	reference_features = board.featurize_board(0)
-	cpp_features = get_features(cpp_board).reshape(reference_features.shape)
+	symmetry = random.randrange(12)
+	reference_features = board.featurize_board(symmetry)
+	cpp_features = get_features(symmetry, cpp_board).reshape(reference_features.shape)
 #	cpp_features = 
 #	cpp_features = np.moveaxis(cpp_features, 1, 0)
 
