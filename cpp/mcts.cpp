@@ -15,6 +15,10 @@
 #include <deque>
 #include <cmath>
 #include <cassert>
+#include <tensorflow/core/public/session.h>
+#include <tensorflow/core/protobuf/meta_graph.pb.h>
+#include <tensorflow/core/framework/graph.pb.h>
+#include <tensorflow/core/graph/default_device.h>
 
 #include "json.hpp"
 #include "edgeconnect_rules.h"
@@ -26,9 +30,11 @@ using std::endl;
 constexpr double exploration_parameter = 1.0;
 constexpr double dirichlet_alpha = 0.03;
 constexpr double dirichlet_weight = 0.25;
+constexpr int thread_count = 2;
 
 std::random_device rd;
-std::default_random_engine generator(rd());
+//std::default_random_engine generator(rd());
+std::default_random_engine generator(123456789);
 
 // We raise this exception in worker threads when they're done.
 struct StopWorking : public std::exception {};
@@ -44,7 +50,227 @@ public:
 	}
 };
 
-std::pair<const float*, double> request_evaluation(int thread_id, const float* feature_string);
+constexpr const char* meta_graph_path = "checkpoints/edgeconnect-model.meta";
+constexpr const char* checkpoint_path = "checkpoints/edgeconnect-model";
+
+static inline int get_random_symmetry() {
+	return 0;
+//	return std::uniform_int_distribution<int>{0, 11}(generator);
+}
+
+std::vector<int> ensemble_sizes;
+int cache_hits;
+uint64_t mcts_search_hash;
+
+static inline uint64_t combine_nonlinear(uint64_t x, uint64_t y) {
+	x ^= (x << 5) + y + (x >> 2);
+	x *= 7;
+	return x;
+}
+
+void snp_copy(float* start, float* stop, float* dest) {
+	assert(stop - start == BOARD_SIZE * BOARD_SIZE);
+	std::copy(start, stop, dest);
+}
+
+struct BoardEvaluator {
+	static constexpr int MAX_ENSEMBLE_SIZE = 4;
+	static constexpr int QUEUE_DEPTH = 4096;
+	static constexpr float PROBABILITY_THRESHOLD = 0.1; //005;
+	static constexpr int MAX_CACHE_ENTRIES = 10000;
+
+	struct NNResult {
+		float policy[BOARD_SIZE * BOARD_SIZE];
+		double value;
+		int random_symmetry;
+	};
+
+	struct BoardQueue {
+		std::mutex queue_mutex;
+		std::deque<EdgeConnectState> board_queue;
+	};
+
+	std::mutex cache_mutex;
+	std::unordered_map<size_t, std::unique_ptr<NNResult>> nn_cache;
+	std::vector<BoardQueue> per_thread_board_queues;
+	std::deque<EdgeConnectState> board_queue;
+
+	tensorflow::Session* session;
+	tensorflow::MetaGraphDef meta_graph_def;
+	tensorflow::Tensor input_tensor;
+
+	BoardEvaluator(int thread_count)
+		: per_thread_board_queues(thread_count)
+		, input_tensor(tensorflow::DT_FLOAT, tensorflow::TensorShape({MAX_ENSEMBLE_SIZE, 23, 23, 12}))
+	{
+		auto opts = tensorflow::SessionOptions();
+		std::cout << "Devices: " << opts.config.gpu_options().visible_device_list() << std::endl;
+		session = tensorflow::NewSession(opts);
+		if (session == nullptr)
+			throw std::runtime_error("Could not create Tensorflow session.");
+		tensorflow::Status status;
+
+		tensorflow::MetaGraphDef meta_graph_def;
+		status = tensorflow::ReadBinaryProto(tensorflow::Env::Default(), meta_graph_path, &meta_graph_def);
+		if (!status.ok())
+			throw std::runtime_error("Error reading meta-graph definition from " + std::string(meta_graph_path) + ": " + status.ToString());
+		auto graph_def = meta_graph_def.graph_def();
+
+		status = session->Create(graph_def);
+		if (!status.ok())
+			throw std::runtime_error("Error creating graph: " + status.ToString());
+
+		// Read weights from the saved checkpoint
+		tensorflow::Tensor checkpointPathTensor(tensorflow::DT_STRING, tensorflow::TensorShape());
+		checkpointPathTensor.scalar<std::string>()() = checkpoint_path;
+		status = session->Run(
+			{{meta_graph_def.saver_def().filename_tensor_name(), checkpointPathTensor}},
+			{},
+			{meta_graph_def.saver_def().restore_op_name()},
+			nullptr
+		);
+		if (!status.ok())
+			throw std::runtime_error("Error loading checkpoint from " + std::string(checkpoint_path) + ": " + status.ToString());
+		std::cout << "Loaded." << std::endl;
+
+		auto eigen_tensor = input_tensor.flat<float>();
+		for (int i = 0; i < MAX_ENSEMBLE_SIZE * 23 * 23 * 12; i++)
+			eigen_tensor(i) = 0.0;
+	}
+
+	void do_practice_computation() {
+		std::vector<tensorflow::Tensor> outputTensors;
+		tensorflow::Tensor is_training(tensorflow::DT_BOOL, tensorflow::TensorShape());
+		is_training.scalar<bool>()() = false;
+		tensorflow::Status status = session->Run(
+			{{"net/input_placeholder", input_tensor}, {"net/is_training", is_training}},
+			{"net/policy_output_id", "net/value_output_id"},
+			{},
+			&outputTensors
+		);
+		if (!status.ok())
+			throw std::runtime_error("Error evaluating: " + status.ToString());
+	}
+
+	int compute_evaluation(int thread_id, const EdgeConnectState& board, float* policy, double* value) {
+		size_t board_hash = std::hash<EdgeConnectState>{}(board);
+		// Unqueue some boards to be computed along with this one.
+		{
+			std::unique_lock<std::mutex> lk(cache_mutex);
+			auto it = nn_cache.find(board_hash);
+			if (it != nn_cache.end()) {
+//				std::cout << " --------------- Cache hit!" << std::endl;
+				cache_hits++;
+				NNResult& cache_entry = *it->second;
+
+#if 0
+				{
+					board.featurize(0, &input_tensor.flat<float>()(0));
+					std::vector<tensorflow::Tensor> output_tensors;
+					tensorflow::Tensor is_training(tensorflow::DT_BOOL, tensorflow::TensorShape());
+					is_training.scalar<bool>()() = false;
+					tensorflow::Status status = session->Run(
+						{{"net/input_placeholder", input_tensor}, {"net/is_training", is_training}},
+						{"net/policy_output_id", "net/value_output_id"},
+						{},
+						&output_tensors
+					);
+					if (!status.ok())
+						throw std::runtime_error("Error evaluating: " + status.ToString());
+					// Make sure our result is the same.
+					float reference_value = output_tensors[1].flat<float>()(0);
+					if (fabs(reference_value - cache_entry.value) > 1e-7) {
+						std::cout << " ~~~~~~~~~~~ Divergent values: " << cache_entry.value << " should have been " << reference_value << std::endl;
+					}
+				}
+#endif
+
+				snp_copy(&cache_entry.policy[0], &cache_entry.policy[BOARD_SIZE * BOARD_SIZE], policy);
+				*value = cache_entry.value;
+				assert(cache_entry.random_symmetry == 0);
+				return cache_entry.random_symmetry;
+			}
+		}
+
+		int random_symmetry = get_random_symmetry(); //std::uniform_int_distribution<int>{0, 11}(generator);
+		board.featurize(random_symmetry, &input_tensor.flat<float>()(0));
+		int loaded_up = 1;
+
+		std::vector<NNResult*> cache_entries;
+		while (loaded_up < MAX_ENSEMBLE_SIZE and board_queue.size() > 0) {
+			const EdgeConnectState& queued_board = board_queue.front();
+			auto [it, newly_inserted] = nn_cache.emplace(
+				std::hash<EdgeConnectState>{}(queued_board),
+				std::make_unique<NNResult>()
+			);
+			if (not newly_inserted) {
+//				std::cout << "This should not happen!!!!!!!!!!!!!!!!!!" << std::endl;
+				board_queue.pop_front();
+				continue;
+			}
+			/*
+			auto it = nn_cache.find(board_hash);
+			if (it != nn_cache.end()) {
+				board_queue.pop_front();
+				continue;
+			}
+			*/
+//			NNResult* cache_entry_ptr = &nn_cache[state];
+			NNResult* cache_entry_ptr = it->second.get();
+			cache_entries.push_back(cache_entry_ptr);
+			cache_entry_ptr->random_symmetry = get_random_symmetry(); //std::uniform_int_distribution<int>{0, 11}(generator);
+			int float_offset = FEATURE_MAP_LENGTH * loaded_up;
+			queued_board.featurize(cache_entry_ptr->random_symmetry, &input_tensor.flat<float>()(float_offset));
+			board_queue.pop_front();
+			loaded_up++;
+		}
+
+//		std::cout << "Running on: " << loaded_up << std::endl;
+		ensemble_sizes.push_back(loaded_up);
+
+		std::vector<tensorflow::Tensor> output_tensors;
+		tensorflow::Tensor is_training(tensorflow::DT_BOOL, tensorflow::TensorShape());
+		is_training.scalar<bool>()() = false;
+		tensorflow::Status status = session->Run(
+			{{"net/input_placeholder", input_tensor}, {"net/is_training", is_training}},
+			{"net/policy_output_id", "net/value_output_id"},
+			{},
+			&output_tensors
+		);
+		if (!status.ok())
+			throw std::runtime_error("Error evaluating: " + status.ToString());
+
+		auto output_policy = output_tensors[0].flat<float>();
+		snp_copy(&output_policy(0), &output_policy(BOARD_SIZE * BOARD_SIZE), policy);
+		*value = output_tensors[1].flat<float>()(0);
+
+		for (int i = 1; i < loaded_up; i++) {
+			NNResult& cache_entry = *cache_entries.at(i - 1);
+			int float_offset = BOARD_SIZE * BOARD_SIZE * i;
+			snp_copy(&output_policy(float_offset), &output_policy(float_offset + BOARD_SIZE * BOARD_SIZE), cache_entry.policy);
+			cache_entry.value = output_tensors[1].flat<float>()(i);
+		}
+
+		return random_symmetry;
+	}
+
+	bool can_accept_more() {
+		return board_queue.size() < QUEUE_DEPTH;
+	}
+
+	bool add_likely_to_be_needed_board(int thread_id, const EdgeConnectState& board, Move move) {
+		if (not can_accept_more())
+			return false;
+		if (nn_cache.find(std::hash<EdgeConnectState>{}(board)) != nn_cache.end())
+			return false;
+//		board_queue.emplace_back(board);
+		board_queue.emplace_back(board);
+		board_queue.back().make_move(move);
+		return true;
+	}
+};
+
+std::unique_ptr<BoardEvaluator> evaluator;
 
 struct Evaluations {
 	bool game_over;
@@ -69,17 +295,17 @@ struct Evaluations {
 			return;
 		}
 
-		float feature_buffer[FEATURE_MAP_LENGTH] = {};
-		board.featurize(feature_buffer);
-
-		auto request_result = request_evaluation(thread_id, feature_buffer);
-		const float* posterior_array = request_result.first;
-		value = request_result.second;
+//		int random_symmetry = std::uniform_int_distribution<int>{0, 11}(generator);
+//		float feature_buffer[FEATURE_MAP_LENGTH] = {};
+//		board.featurize(random_symmetry, feature_buffer);
+		float posterior_array[BOARD_SIZE * BOARD_SIZE];
+		int random_symmetry = evaluator->compute_evaluation(thread_id, board, posterior_array, &value);
+//		std::cout << "Got: " << random_symmetry << std::endl;
 
 		// Softmax the posterior array.
 		double softmaxed[BOARD_SIZE * BOARD_SIZE];
 		for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++)
-			softmaxed[i] = exp(posterior_array[i]);
+			softmaxed[i] = exp(posterior_array[MOVE_SYMMETRY_LOOKUP[random_symmetry][i]]);
 		double total = 0.0;
 		for (int i = 0; i < BOARD_SIZE * BOARD_SIZE; i++)
 			total += softmaxed[i];
@@ -107,8 +333,17 @@ struct Evaluations {
 		assert(num_moves > 0);
 		assert(posterior.size() > 0);
 
+		// Find children that are likely to be needed.
+		if (evaluator->can_accept_more())
+			for (auto& p : posterior)
+				if (p.second >= BoardEvaluator::PROBABILITY_THRESHOLD)
+					if (evaluator->add_likely_to_be_needed_board(thread_id, board, p.first))
+						1;
+//						std::cout << "Added entry for: " << p.first << " with " << p.second << std::endl;
+
 		// Add Dirichlet noise.
 		if (use_dirichlet_noise) {
+			assert(false);
 			std::gamma_distribution<double> distribution(dirichlet_alpha, 1.0);
 			std::vector<double> dirichlet_distribution;
 			for (auto& p : posterior)
@@ -129,31 +364,6 @@ struct Evaluations {
 				test_total += p.second;
 //			assert(0.99 < test_total and test_total < 1.01);
 		}
-	}
-};
-
-struct BoardEvaluator {
-	constexpr int MAX_ENSEMBLE_SIZE = 32;
-	constexpr int QUEUE_DEPTH = 1024;
-	constexpr int PROBABILITY_THRESHOLD = 0.15;
-	constexpr int MAX_CACHE_ENTRIES = 10000;
-
-	struct BoardQueue {
-		std::mutex queue_mutex;
-		std::deque<EdgeConnectState> board_queue;
-	};
-
-	std::mutex cache_mutex;
-	std::unordered_map<EdgeConnectState, Evaluations> nn_cache;
-	std::vector<BoardQueue> per_thread_board_queues;
-	std::deque<EdgeConnectState> board_queue;
-
-	BoardEvaluator(int thread_count)
-		: per_thread_board_queues(thread_count) {}
-
-	void compute_evaluations(int thread_id, const EdgeConnectState& state, Evaluations& evals) {
-		// Unqueue some boards to be computed along with this one.
-		std::unique_lock<std::mutex> lk(board_queues_mutex);
 	}
 };
 
@@ -199,7 +409,7 @@ struct MCTSNode {
 			u_score = sqrt(1 + all_edge_visits);
 			Q_score = 0;
 		} else {
-			const MCTSEdge& edge = (*it).second;
+			const MCTSEdge& edge = it->second;
 			u_score = sqrt(1 + all_edge_visits) / (1 + edge.edge_visits);
 			Q_score = edge.get_edge_score();
 		}
@@ -246,6 +456,8 @@ struct MCTSNode {
 				std::cerr << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
 			}
 			assert(not std::isnan(score));
+			if (not (score >= 0.0))
+				std::cout << "Bad score: " << score << std::endl;
 			assert(score >= 0.0);
 			if (score >= best_score) {
 				best_move = p.first;
@@ -261,19 +473,6 @@ struct MCTSNode {
 		return best_move;
 	}
 };
-
-namespace std {
-	template<> struct hash<EdgeConnectState> {
-		size_t operator()(const EdgeConnectState& m) const {
-			size_t result = 1234567;
-			for (int i = 0; i < QR_COUNT; i++) {
-				result ^= (result << 5) + m.cells[i] + (result >> 2);
-			}
-			result += m.move_state;
-			return result;
-		}
-	};
-}
 
 struct MCTS {
 	int thread_id;
@@ -301,7 +500,7 @@ struct MCTS {
 			return new_node;
 		}
 		// If the weak reference was collected then clear it out.
-		std::weak_ptr<MCTSNode>& cache_entry = (*it).second;
+		std::weak_ptr<MCTSNode>& cache_entry = it->second;
 		if (cache_entry.expired()) {
 			transposition_table.erase(it);
 			// This shouldn't be able to recurse again, because now we'll hit the top code path.
@@ -327,7 +526,7 @@ struct MCTS {
 						return a.second.edge_visits < b.second.edge_visits;
 					}
 				);
-				move = (*it).first;
+				move = it->first;
 			} else {
 				// Pick the edge that has the current highest k-armed bandit value.
 				move = node->select_action();
@@ -336,7 +535,7 @@ struct MCTS {
 			const auto it = node->outgoing_edges.find(move);
 			if (it == node->outgoing_edges.end())
 				break;
-			MCTSEdge& edge = (*it).second;
+			MCTSEdge& edge = it->second;
 			edges_on_path.push_back(&edge);
 			node = edge.child_node;
 		}
@@ -345,13 +544,21 @@ struct MCTS {
 
 	void step() {
 		// 1) Pick a path through the tree.
-		auto triple = select_principal_variation();
-		// Darn, I wish I had structured bindings already. :(
-		shared_ptr<MCTSNode>         leaf_node     = std::get<0>(triple);
-		Move                         move          = std::get<1>(triple);
-		std::vector<MCTSEdge*>       edges_on_path = std::get<2>(triple);
+		auto [leaf_node, move, edges_on_path] = select_principal_variation();
+//		// Darn, I wish I had structured bindings already. :(
+//		shared_ptr<MCTSNode>         leaf_node     = std::get<0>(triple);
+//		Move                         move          = std::get<1>(triple);
+//		std::vector<MCTSEdge*>       edges_on_path = std::get<2>(triple);
 
 		shared_ptr<MCTSNode> new_node;
+
+//		std::cout << "Visit:";
+		for (auto e : edges_on_path) {
+//			std::cout << " " << e->edge_move;
+			mcts_search_hash = combine_nonlinear(mcts_search_hash, e->edge_move);
+		}
+		mcts_search_hash = combine_nonlinear(mcts_search_hash, 12345);
+//		std::cout << std::endl;
 
 		// 2) If the move is non-null then expand once at the leaf.
 		if (move != NO_MOVE) {
@@ -363,7 +570,7 @@ struct MCTS {
 				move,
 				MCTSEdge{move, leaf_node.get(), new_node},
 			});
-			MCTSEdge& new_edge = (*pair_it_success.first).second;
+			MCTSEdge& new_edge = pair_it_success.first->second;
 			edges_on_path.push_back(&new_edge);
 		} else {
 			// If the move is null, then we had no legal moves, and we just propagate the score again.
@@ -415,7 +622,7 @@ struct MCTS {
 			return;
 		}
 		// Otherwise, reuse a subtree.
-		root_node = (*it).second.child_node;
+		root_node = it->second.child_node;
 		root_board = root_node->board;
 		// Now that a new node is the root we have to redo its evals with Dirichlet noise, if required.
 		// This is a little wasteful, when we could just apply Dirichlet noise, but it's not that bad.
@@ -426,6 +633,7 @@ struct MCTS {
 };
 
 Move sample_proportionally_to_visits(const shared_ptr<MCTSNode>& node) {
+	assert(false);
 	double x = std::uniform_real_distribution<float>{0, 1}(generator);
 	for (const std::pair<Move, MCTSEdge>& p : node->outgoing_edges) {
 		double weight = p.second.edge_visits / node->all_edge_visits;
@@ -435,7 +643,7 @@ Move sample_proportionally_to_visits(const shared_ptr<MCTSNode>& node) {
 	}
 	// If we somehow slipped through then return some arbitrary element.
 	std::cerr << "Potential bug: Weird numerical edge case in sampling!" << endl;
-	return (*node->outgoing_edges.begin()).first;
+	return node->outgoing_edges.begin()->first;
 }
 
 Move sample_most_visited_move(const shared_ptr<MCTSNode>& node) {
@@ -451,238 +659,35 @@ Move sample_most_visited_move(const shared_ptr<MCTSNode>& node) {
 	return best_move;
 }
 
-#if 0
-json generate_game(int thread_id) {
-	EdgeConnectState board;
-//	set_board(board, STARTING_GAME_POSITION);
-	MCTS mcts(thread_id, board, true);
-	json entry = {{"boards", {}}, {"moves", {}}, {"dists", {}}, {"evals", {}}};
-	int steps_done = 0;
-
-#ifdef ONE_RANDOM_MOVE
-	int random_ply = std::uniform_int_distribution<int>{0, 119}(generator);
-	entry["random_ply"] = random_ply;
-#endif
-
-	for (unsigned int ply = 0; ply < maximum_game_plies; ply++) {
-		// Do a number of steps.
-		while (mcts.root_node->all_edge_visits < global_visits) {
-			mcts.step();
-			steps_done++;
-		}
-		// Sample a move according to visit counts.
-		Move selected_move;
-		if (ply <= 30)
-			selected_move = sample_proportionally_to_visits(mcts.root_node);
-		else
-			selected_move = sample_most_visited_move(mcts.root_node);
-
-#ifdef ONE_RANDOM_MOVE
-		// If we're AT the randomization point then instead pick a uniformly random legal move.
-		if (ply == random_ply) {
-			// Pick a random move.
-			int random_index = std::uniform_int_distribution<int>{
-				0,
-				static_cast<int>(mcts.root_node->evals.posterior.size()) - 1,
-			}(generator);
-			auto it = mcts.root_node->evals.posterior.begin();
-			std::advance(it, random_index);
-			selected_move = (*it).first;
-		}
-
-		// If we're AFTER the randomization point then pick the best move we found.
-		if (ply > random_ply) {
-			int most_visits = -1;
-			for (const std::pair<Move, MCTSEdge>& p : mcts.root_node->outgoing_edges) {
-				if (p.second.edge_visits > most_visits) {
-					selected_move = p.first;
-					most_visits = p.second.edge_visits;
-				}
-			}
-		}
-#endif
-
-		// If appropriate choose a uniformly random legal move in the opening.
-		if (ply < opening_randomization_schedule.size() and
-		    std::uniform_real_distribution<double>{0, 1}(generator) < opening_randomization_schedule[ply]) {
-			// Pick a random move.
-			int random_index = std::uniform_int_distribution<int>{0, static_cast<int>(mcts.root_node->evals.posterior.size()) - 1}(generator);
-			auto it = mcts.root_node->evals.posterior.begin();
-			std::advance(it, random_index);
-			selected_move = (*it).first;
-		}
-
-//		std::vector<char> serialized_board = serialize_board_for_json(mcts.root_board);
-//		std::string s(serialized_board.begin(), serialized_board.end());
-		entry["boards"].push_back(mcts.root_board.serialize_board());
-		entry["moves"].push_back(std::to_string(selected_move));
-		entry["evals"].push_back(mcts.root_node->get_overall_evaluation());
-		entry["dists"].push_back({});
-		// Write out the entire visit distribution.
-		for (const std::pair<Move, MCTSEdge>& p : mcts.root_node->outgoing_edges) {
-			double weight = p.second.edge_visits / mcts.root_node->all_edge_visits;
-			entry["dists"].back()[std::to_string(p.first)] = weight;
-		}
-		mcts.play(selected_move);
-		if (mcts.root_node->board.result_with_early_stopping() != 0)
-			break;
-	}
-//	float work_factor = steps_done / (float)(global_visits * entry["moves"].size());
-//	cout << "Work factor: " << work_factor << endl;
-
-	entry["result"] = mcts.root_node->board.result_with_early_stopping();
-	return entry;
-}
-#endif
-
-// ================================================
-//        T h r e a d e d   W o r k l o a d
-// ================================================
-
-struct Worker;
-struct ResponseSlot;
-
-std::list<Worker> global_workers;
-std::vector<Worker*> global_workers_by_id;
-float* global_fill_buffers[2];
-int global_buffer_entries;
-std::ofstream* global_output_file;
-
-int current_buffer = 0;
-int fill_levels[2] = {0, 0};
-std::vector<ResponseSlot> response_slots[2];
-std::queue<int> global_filled_queue;
-std::mutex global_mutex;
-std::atomic<bool> keep_working;
-
-struct ResponseSlot {
-	int thread_id;
-};
-
-struct Worker {
-	std::mutex thread_mutex;
-	std::condition_variable cv;
-	std::thread t;
-
-	bool response_filled;
-	double response_value;
-	float response_posterior[BOARD_SIZE * BOARD_SIZE];
-
-	Worker(int thread_id)
-		: t(Worker::thread_main, thread_id) {}
-
-	static void thread_main(int thread_id) {
-		while (true) {
-			try {
-			} catch (StopWorking& e) {
-				return;
-			}
-		}
-	}
-};
-
-std::pair<const float*, double> request_evaluation(int thread_id, const float* feature_string) {
-	// Write an entry into the appropriate work queue.
-	{
-		std::lock_guard<std::mutex> global_lock(global_mutex);
-		int slot_index = fill_levels[current_buffer]++;
-		assert(0 <= slot_index and slot_index < response_slots[0].size());
-		// Copy our features into the big buffer.
-		float* destination = global_fill_buffers[current_buffer] + FEATURE_MAP_LENGTH * slot_index;
-		std::copy(feature_string, feature_string + FEATURE_MAP_LENGTH, destination);
-		// Place an entry requesting a reply.
-		response_slots[current_buffer].at(slot_index).thread_id = thread_id;
-		// Set that we're waiting on a response.
-		Worker& worker = *global_workers_by_id[thread_id];
-		worker.response_filled = false;
-		// Swap buffers if we filled up the current one.
-		if (fill_levels[current_buffer] == global_buffer_entries) {
-			global_filled_queue.push(current_buffer);
-			current_buffer = 1 - current_buffer;
-		}
-		// TODO: Notify the main thread so it doesn't have to poll.
-	}
-	// Wait on a reply.
-	Worker& worker = *global_workers_by_id[thread_id];
-	std::unique_lock<std::mutex> lk(worker.thread_mutex);
-	while (not worker.response_filled) {
-		worker.cv.wait_for(lk, std::chrono::milliseconds(250), [&worker]{
-			return worker.response_filled;
-		});
-		if (not keep_working)
-			throw StopWorking();
-	}
-	// Response collected!
-	return {worker.response_posterior, worker.response_value};
-}
-
-extern "C" void launch_threads(char* output_path, int visits, float* fill_buffer1, float* fill_buffer2, int buffer_entries, int thread_count) {
-	edgeconnect_initialize_structures();
-
-	global_visits = visits;
-	global_fill_buffers[0] = fill_buffer1;
-	global_fill_buffers[1] = fill_buffer2;
-	global_buffer_entries = buffer_entries;
-	cout << "Launching into " << fill_buffer1 << ", " << fill_buffer2 << " with " << buffer_entries << " entries and " << thread_count << " threads." << endl;
-
-	cout << "Writing to: " << output_path << endl;
-	global_output_file = new std::ofstream(output_path, std::ios_base::app);
-	keep_working = true;
-
-	for (int i = 0; i < buffer_entries; i++) {
-		response_slots[0].push_back(ResponseSlot());
-		response_slots[1].push_back(ResponseSlot());
+extern "C" void launch_mcts(int step_count) {
+	if (evaluator == nullptr) {
+		edgeconnect_initialize_structures();
+		evaluator = std::make_unique<BoardEvaluator>(2);
+		evaluator->do_practice_computation();
 	}
 
-	{
-		std::lock_guard<std::mutex> global_lock(global_mutex);
-		for (int i = 0; i < thread_count; i++) {
-			global_workers.emplace_back(i);
-			global_workers_by_id.push_back(&global_workers.back());
-		}
-	}
-}
+	ensemble_sizes.clear();
+	cache_hits = 0;
+	mcts_search_hash = 123456789;
 
-extern "C" int get_workload(void) {
-	while (true) {
-		{
-			std::lock_guard<std::mutex> global_lock(global_mutex);
-			// Check if a workload is ready.
-			if (not global_filled_queue.empty()) {
-				int workload_index = global_filled_queue.front();
-				global_filled_queue.pop();
-				return workload_index;
-			}
-		}
-		std::this_thread::sleep_for(std::chrono::microseconds(100));
-	}
-}
+//	evaluator->nn_cache.clear();
+//	evaluator->board_queue.clear();
 
-extern "C" void complete_workload(int workload, float* posteriors, float* values) {
-	std::lock_guard<std::mutex> global_lock(global_mutex);
-	for (int i = 0; i < global_buffer_entries; i++) {
-		ResponseSlot& slot = response_slots[workload].at(i);
-		Worker& worker = *global_workers_by_id.at(slot.thread_id);
-		worker.response_value = values[i];
-		std::copy(posteriors, posteriors + BOARD_SIZE * BOARD_SIZE, worker.response_posterior);
-		posteriors += BOARD_SIZE * BOARD_SIZE;
-		{
-			std::lock_guard<std::mutex> lk(worker.thread_mutex);
-			worker.response_filled = true;
-		}
-		worker.cv.notify_one();
-	}
-	fill_levels[workload] = 0;
-}
+	EdgeConnectState starting_state;
+	MCTS mcts(0, starting_state, false);
+	for (int i = 0; i < step_count; i++)
+		mcts.step();
 
-extern "C" void shutdown(void) {
-	keep_working = false;
-	for (Worker& w : global_workers)
-		w.t.join();
-	// Clear out data structures to setup for another run.
-	for (int i : {0, 1})
-		response_slots[i].clear();
-	global_workers.clear();
-	global_workers_by_id.clear();
+	double mean_ensemble_size = 0;
+	int min_ensemble_size = 1000;
+	int max_ensemble_size = -1000;
+	for (auto i : ensemble_sizes) {
+		mean_ensemble_size += i;
+		min_ensemble_size = std::min(min_ensemble_size, i);
+		max_ensemble_size = std::max(max_ensemble_size, i);
+	}
+	std::cout << "Mean ensemble size: " << mean_ensemble_size / ensemble_sizes.size() << " Range: " << min_ensemble_size << " - " << max_ensemble_size << std::endl;
+	std::cout << "Cache hits: " << cache_hits << std::endl;
+	std::cout << "Search hash: " << mcts_search_hash << std::endl;
 }
 

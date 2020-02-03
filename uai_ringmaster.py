@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-import sys, random, string, subprocess, atexit, time, datetime, itertools, os
+import sys, random, string, subprocess, atexit, time, datetime, itertools, os, glob
 import uai_interface
 #import ataxx_rules
 import edgeconnect_rules
@@ -69,8 +69,8 @@ class UAIPlayer:
 				break
 			lines.append(line)
 		s = "".join(lines)
-		s = s.replace("X", edgeconnect_rules.RED + "X" + edgeconnect_rules.ENDC)
-		s = s.replace("O", edgeconnect_rules.BLUE + "O" + edgeconnect_rules.ENDC)
+#		s = s.replace("X", edgeconnect_rules.RED + "X" + edgeconnect_rules.ENDC)
+#		s = s.replace("O", edgeconnect_rules.BLUE + "O" + edgeconnect_rules.ENDC)
 		return s
 
 def play_one_game(args, engine1, engine2, opening_moves):
@@ -95,8 +95,8 @@ def play_one_game(args, engine1, engine2, opening_moves):
 		if args.show_games:
 			colorize = lambda do, s: edgeconnect_rules.RED + s + edgeconnect_rules.ENDC if do else s
 			player_to_move = ((ply_number + 1) // 2) % 2
-			engine_name1 = colorize(player_to_move == 1, engine1[-1])
-			engine_name2 = colorize(player_to_move == 2, engine2[-1])
+			engine_name1 = colorize(player_to_move == 0, engine1[-1])
+			engine_name2 = colorize(player_to_move == 1, engine2[-1])
 			print()
 			print("======= Player %i move. %s - %s" % (player_to_move, engine_name1, engine_name2))
 			print("[%3i plies] Score: %2i - %2i" % (ply_number, 0, 0))
@@ -210,8 +210,20 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 	print("Options:", args)
 
+	# Implement engine globbing, so someone can write --engine "command --model-path models/*" and have it fill in a bunch of engines.
+	engines = []
+	for engine in args.engine:
+		results = [()]
+		for i, field in enumerate(shlex.split(engine)):
+			if "*" in field:
+				all_matches = glob.glob(field)
+				results = [r + (match,) for r in results for match in all_matches]
+			else:
+				results = [r + (field,) for r in results]
+		engines.extend(results)
+#	engines.sort()
+
 	print("Engines:")
-	engines = list(map(tuple, list(map(shlex.split, args.engine))))
 	for i, engine in enumerate(engines):
 		print("%4i: %s" % (i + 1, engine))
 
@@ -241,9 +253,9 @@ if __name__ == "__main__":
 #					if not ("cm3" in " ".join(a) and "cm3" in " ".join(b))
 #					if ("005-pre2" in " ".join(a) or "005-pre2" in " ".join(b) or "ataxx-engine" in " ".join(a) or "ataxx-engine" in " ".join(b)) or
 					if
-						(abs(get_model_number(a) - get_model_number(b)) <= 5 and (get_model_number(a) > 0 or get_model_number(b) > 0)) and
+						(abs(get_model_number(a) - get_model_number(b)) <= 30 and (get_model_number(a) > 0 or get_model_number(b) > 0)) and
 #						(get_model_number(a) <= 5 and get_model_number(b) <= 5)
-						(get_model_number(a) > 86 or get_model_number(b) > 86) and
+						(get_model_number(a) > 248 or get_model_number(b) > 248) and
 						True
 				]
 				print("Dropping down from %i -> %i" % (pre_filter, len(pairings)))

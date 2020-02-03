@@ -45,5 +45,8 @@ mkdir -p $BASE/{games,models}
 
 # For run-cm5.
 # Run-cm5 is a copy of run-cm4, but with the training per game increased after the first 13 models.
-time python looper.py --prefix $BASE/ --game-count 500 --visits 800 --training-steps-const 800 --training-steps-linear 200
+# PARAMETERS FOR THE FIRST 230 MODELS:
+#time python looper.py --prefix $BASE/ --game-count 500 --visits 800 --training-steps-const 800 --training-steps-linear 200 --parallel-games-processes 2
+# PARAMETERS THEREAFTER:
+time python looper.py --prefix $BASE/ --game-count 500 --visits 1200 --training-steps-const 2800 --training-steps-linear 0 --parallel-games-processes 2 --training-window 30
 

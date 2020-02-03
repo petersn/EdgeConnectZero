@@ -112,8 +112,15 @@ if __name__ == "__main__":
 	parser.add_argument("--safety-ms", metavar="MS", default=0, type=int, help="Number of milliseconds to shave off of each movetime for safety.")
 	parser.add_argument("--show-game", action="store_true", help="Show the game on stderr.")
 	parser.add_argument("--play-randomly", action="store_true", help="Actually just play uniformly at random.")
+	parser.add_argument("--params", default=None, help="Filters and blocks that the model was saved with.")
 	args = parser.parse_args()
 	print(args, file=sys.stderr)
+
+	if args.params is not None:
+		filters, block_count, use_leaky_fc = map(int, args.params.split(","))
+		engine.model.Network.FILTERS = filters
+		engine.model.Network.BLOCK_COUNT = block_count
+		engine.model.Network.USE_LEAKY_FC = use_leaky_fc
 
 	engine.setup_evaluator(use_rpc=False)
 	engine.initialize_model(args.network_path)

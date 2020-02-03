@@ -12,6 +12,7 @@ import model
 #generation_mode = "PLAIN"
 #generation_mode = "THREADS"
 generation_mode = "PROCESSES"
+PROCESS_COUNT = 16
 
 def parse_move(move):
 	if isinstance(move, str):
@@ -157,7 +158,7 @@ if __name__ == "__main__":
 		def worker_thread():
 			print("Starting worker thread.")
 			while True:
-				if minibatch_queue.qsize() > 100:
+				while minibatch_queue.qsize() > 100:
 					print("Sleeping.")
 					time.sleep(0.5)
 				minibatch = make_minibatch(train_entries, args.minibatch_size)
@@ -169,12 +170,12 @@ if __name__ == "__main__":
 		def worker_process(seed, m_queue, size):
 			random.seed(seed)
 			while True:
-				if m_queue.qsize() > 100:
+				while m_queue.qsize() > 100:
 					time.sleep(0.1)
 				minibatch = make_minibatch(train_entries, size)
 				m_queue.put(minibatch)
 		processes = []
-		for _ in range(16):
+		for _ in range(PROCESS_COUNT):
 			p = multiprocessing.Process(
 				target=worker_process,
 				args=(random.getrandbits(64), minibatch_queue, args.minibatch_size),

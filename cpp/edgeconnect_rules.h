@@ -14,10 +14,10 @@
 #include "union_find.h"
 
 template<int s1, int s2, int s3>
-int stride_index(int x, int y, int z) {
-	assert(0 <= x and x < s1);
-	assert(0 <= y and y < s2);
-	assert(0 <= z and z < s3);
+static inline int stride_index(int x, int y, int z) {
+//	assert(0 <= x and x < s1);
+//	assert(0 <= y and y < s2);
+//	assert(0 <= z and z < s3);
 	return
 		s2 * s3 * x +
 		     s3 * y +
@@ -134,12 +134,12 @@ static void edgeconnect_initialize_structures() {
 	std::copy(SCORING_CELLS_MASK.begin(), SCORING_CELLS_MASK.end(), EDGE_CELLS_MASK.begin());
 	get_at(SCORING_CELLS_MASK, BOARD_RADIUS, BOARD_RADIUS) = 1;
 
-	std::cout << "VALID:\n";
-	debug_print(VALID_CELLS_MASK);
-	std::cout << "SCORING:\n";
-	debug_print(SCORING_CELLS_MASK);
-	std::cout << "EDGE:\n";
-	debug_print(EDGE_CELLS_MASK);
+//	std::cout << "VALID:\n";
+//	debug_print(VALID_CELLS_MASK);
+//	std::cout << "SCORING:\n";
+//	debug_print(SCORING_CELLS_MASK);
+//	std::cout << "EDGE:\n";
+//	debug_print(EDGE_CELLS_MASK);
 
 	for (int q = 0; q < BOARD_SIZE; q++) {
 		for (int r = 0; r < BOARD_SIZE; r++) {
@@ -348,6 +348,22 @@ static Move* size_t_to_Move_ptr_helper(size_t x) {
 
 static float* size_t_to_float_ptr_helper(size_t x) {
 	return reinterpret_cast<float*>(x);
+}
+
+namespace std {
+	template<> struct hash<EdgeConnectState> {
+		size_t operator()(const EdgeConnectState& m) const {
+			size_t result = 1234567;
+			for (int i = 0; i < QR_COUNT; i++) {
+				result ^= (result << 5) + m.cells[i] + (result >> 2);
+//				result *= 7;
+//				result ^= m.cells[i]
+//				result ^= (result << 5) + m.cells[i] << 15 + (result >> 2);
+			}
+			result += m.move_state + m.move_state << 15;
+			return result;
+		}
+	};
 }
 
 #endif

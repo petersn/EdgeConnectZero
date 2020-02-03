@@ -20,14 +20,18 @@ def set_dtype(dtype):
 
 set_dtype(tf.float32)
 
+def gelu(x):
+	return 0.5*x*(1+tf.tanh(np.sqrt(2/np.pi)*(x+0.044715*tf.pow(x, 3))))
+
 class Network:
 	INPUT_FEATURE_COUNT = 12
 	NONLINEARITY = [tf.nn.relu]
-	FILTERS = 64
+	FILTERS = 64 #128
 	CONV_SIZE = 3
 	BLOCK_COUNT = 12
 	VALUE_FILTERS = 1
 	VALUE_FC_SIZE = 32
+	USE_LEAKY_FC = False # True
 #	VALUE_FC_SIZES = [BOARD_SIZE * BOARD_SIZE * VALUE_FILTERS, 32, 1]
 	POLICY_OUTPUT_SHAPE = [None, BOARD_SIZE, BOARD_SIZE, MOVE_TYPES]
 	VALUE_OUTPUT_SHAPE = [None, 1]
@@ -79,11 +83,12 @@ class Network:
 
 	def build_policy_head(self):
 		weights = self.new_weight_variable([1, 1, self.FILTERS, MOVE_TYPES])
-		self.policy_output = tf.nn.conv2d(self.flow, weights, strides=[1, 1, 1, 1], padding="SAME")
+		self.policy_output = tf.nn.conv2d(self.flow, weights, strides=[1, 1, 1, 1], padding="SAME", name="policy_output")
 #		self.policy_output = tf.reshape(self.policy_output, [-1, BOARD_SIZE * BOARD_SIZE, MOVE_TYPES])
 #		self.policy_output = tf.matrix_transpose(self.policy_output)
 		if DTYPE == tf.float16:
 			self.policy_output = tf.cast(self.policy_output, tf.float32)
+		self._po = tf.identity(self.policy_output, name="policy_output_id")
 
 	def build_value_head(self):
 		weights = self.new_weight_variable([1, 1, self.FILTERS, self.VALUE_FILTERS])
@@ -92,13 +97,20 @@ class Network:
 
 		fc_w1 = self.new_weight_variable([BOARD_SIZE * BOARD_SIZE, self.VALUE_FC_SIZE])
 		fc_b1 = self.new_bias_variable([self.VALUE_FC_SIZE])
-		value_hidden = self.NONLINEARITY[0](tf.matmul(value_layer, fc_w1) + fc_b1)
+		if self.USE_LEAKY_FC:
+			value_hidden = tf.nn.leaky_relu(
+				features=tf.matmul(value_layer, fc_w1) + fc_b1,
+				alpha=0.01,
+			)
+		else:
+			value_hidden = self.NONLINEARITY[0](tf.matmul(value_layer, fc_w1) + fc_b1)
 
 		fc_w2 = self.new_weight_variable([self.VALUE_FC_SIZE, 1])
 		fc_b2 = self.new_bias_variable([1])
-		self.value_output = tf.nn.tanh(tf.matmul(value_hidden, fc_w2) + fc_b2)
+		self.value_output = tf.nn.tanh(tf.matmul(value_hidden, fc_w2) + fc_b2, name="value_output")
 		if DTYPE == tf.float16:
 			self.value_output = tf.cast(self.value_output, tf.float32)
+		self._vo = tf.identity(self.value_output, name="value_output_id")
 
 	def build_training(self):
 		# Make policy head loss.
@@ -119,6 +131,7 @@ class Network:
 		# Associate batch normalization with training.
 		update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope=self.scope_name)
 		with tf.control_dependencies(update_ops):
+#			self.train_step = tf.train.AdamOptimizer(learning_rate=self.learning_rate_ph).minimize(self.loss)
 			self.train_step = tf.train.MomentumOptimizer(
 				learning_rate=self.learning_rate_ph, momentum=0.9).minimize(self.loss)
 
@@ -150,6 +163,10 @@ class Network:
 
 	def stack_nonlinearity(self):
 		self.flow = self.NONLINEARITY[0](self.flow)
+#		self.flow = tf.nn.leaky_relu(
+#			features=self.flow,
+#			alpha=0.01,
+#		)
 
 	def stack_block(self):
 		initial_value = self.flow
@@ -228,12 +245,23 @@ class EWMA:
 if __name__ == "__main__":
 	set_dtype(tf.float16)
 	net = Network("net/")
+	sess = tf.Session()
+	sess.run(tf.global_variables_initializer())
+	load_model(net, "run-cm5-r=11-f=64-b=12-fc=32-g=500-v=800-distl-t0/models/model-270.npy")
+	print("About to save!")
+	saver = tf.train.Saver()
+	saver.save(sess, "cpp/checkpoints/edgeconnect-model")
+	exit()
+
+if __name__ == "__main__":
+	set_dtype(tf.float16)
+	net = Network("net/")
 #	print(get_batch_norm_vars(net))
 	print("Parameter count:", net.total_parameters)
 	sess = tf.Session()
 	sess.run(tf.global_variables_initializer())
-	load_model(net, "run-cm5-r=11-f=64-b=12-fc=32-g=500-v=800-distl-t0/models/model-060.npy")
-	batch_size = 64
+	load_model(net, "run-cm5-r=11-f=64-b=12-fc=32-g=500-v=800-distl-t0/models/model-260.npy")
+	batch_size = 1
 	block_input = np.random.randn(batch_size, BOARD_SIZE, BOARD_SIZE, Network.INPUT_FEATURE_COUNT).astype(NP_DTYPE)
 	print("block_input:", block_input.dtype, block_input.shape, block_input.strides, block_input.flags.c_contiguous)
 	print("Warming up.")

@@ -81,7 +81,9 @@ def generate_games(model_number):
 def index_to_model_path(i):
 	return os.path.join(args.prefix, "models", "model-%03i.npy" % i)
 
-def index_to_games_paths(i):
+def index_to_games_paths(i, empirical=False):
+	if empirical:
+		return glob.glob(os.path.join(args.prefix, "games", "model-%03i-*.json" % (i,)))
 	return [
 		os.path.join(args.prefix, "games", "model-%03i-%i.json" % (i, process_index))
 		for process_index in range(args.parallel_games_processes)
@@ -150,7 +152,7 @@ technically statistically biases the games slightly towards being shorter.)
 		# Figure out the directories of games to train on.
 		low_index = min(current_model_number, max(args.training_window_exclude + 1, current_model_number - args.training_window + 1))
 		high_index = current_model_number
-		games_paths = sum((index_to_games_paths(i) for i in range(low_index, high_index + 1)), [])
+		games_paths = sum((index_to_games_paths(i, empirical=True) for i in range(low_index, high_index + 1)), [])
 
 		print("Game paths:", games_paths)
 		steps = args.training_steps_const + args.training_steps_linear * (high_index - low_index + 1)
