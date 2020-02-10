@@ -226,7 +226,7 @@ class EdgeConnectState:
 		return self.legal_moves_cache
 
 	def make_move(self, qr):
-		assert qr in ALL_VALID_QR
+		assert qr in ALL_VALID_QR, "Bad containment: %r %r" % (qr, ALL_VALID_QR)
 		assert self.board[qr] == 0
 		self.legal_moves_cache = None
 		self.board[qr] = self.move_state[0]
@@ -297,16 +297,24 @@ class EdgeConnectState:
 		assert scores[1] != scores[2]
 		return 1 if scores[1] > scores[2] else 2
 
-	def result_with_early_stopping(self):
-		optimistic = {}
+	def make_early_stopping_boards(self):
+		filled_in_boards = {}
 		for player in (1, 2):
 			duplicate = self.copy()
 			for qr in ALL_VALID_QR:
 				if duplicate.board[qr] == 0:
 					duplicate.board[qr] = player
-			optimistic[player] = duplicate.result()
+			filled_in_boards[player] = duplicate
+		return filled_in_boards
+
+	def result_with_early_stopping(self):
+		optimistic = {k: v.result() for k, v in self.make_early_stopping_boards().items()}
 		if optimistic[1] == optimistic[2]:
 			return optimistic[1]
+
+	def unconditional_captures(self):
+		filled_in_boards = {k: v.apply_captures() for k, v in self.make_early_stopping_boards().items()}
+		return EdgeConnectState(np.where(filled_in_boards[1] == filled_in_boards[2], filled_in_boards[1], self.board))
 
 	def featurize_board(self, symmetry):
 		symm_board = apply_symmetry_to_board(symmetry, self.board)

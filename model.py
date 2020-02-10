@@ -280,7 +280,8 @@ if __name__ == "__main__":
 	rate = batch_size * COUNT / (end - start)
 	print("Evaluation rate:", rate)
 
-	summary_string = f"dtype={DTYPE} batch_size={batch_size:3} board_radius={BOARD_RADIUS} filters={net.FILTERS} blocks={net.BLOCK_COUNT} evals/s={rate} delay={1e3 * delay.value:.2}ms"
+#	summary_string = f"dtype={DTYPE} batch_size={batch_size:3} board_radius={BOARD_RADIUS} filters={net.FILTERS} blocks={net.BLOCK_COUNT} evals/s={rate} delay={1e3 * delay.value:.2}ms"
+	summary_string = "PYTHON 3.5 IS TOO OLD"
 	print(summary_string)
 	with open("bench", "a+") as f:
 		print(summary_string, file=f)

@@ -20,6 +20,8 @@ class UAIPlayer:
 		self.send("isready\n")
 		self.send("uainewgame\n")
 #		self.send("setoption name Search value most-captures\n")
+		self.nps = -1
+		self.evaluation = -1
 
 	def send(self, s):
 		self.proc.stdin.write(s.encode("utf8"))
@@ -54,7 +56,9 @@ class UAIPlayer:
 			if not line:
 				raise Exception("Bad UAI!")
 			if line.startswith("info speed "):
-				print(line)
+				self.nps = float(line.split()[2])
+			if line.startswith("info eval "):
+				self.evaluation = float(line.split()[2])
 			if line.startswith("bestmove "):
 #				print " ".join(self.cmd)[:10], "##", line
 				return uai_interface.uai_decode_move(line[9:])

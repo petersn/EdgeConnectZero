@@ -1,7 +1,36 @@
 import React from 'react';
 import './App.css';
+//import Plot from 'react-plotly.js';
 
-const BOARD_RADIUS = 7;
+if (!String.prototype.trim) {
+    String.prototype.trim = function () {
+        return this.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, '');
+    };
+}
+
+// From: https://stackoverflow.com/questions/3733227/javascript-seconds-to-minutes-and-seconds
+function fancyTimeFormat(time) {
+    // Hours, minutes and seconds
+    var hrs = ~~(time / 3600);
+    var mins = ~~((time % 3600) / 60);
+    var secs = ~~time % 60;
+
+    // Output like "1:01" or "4:03:59" or "123:03:59"
+    var ret = "";
+
+    if (hrs > 0) {
+        ret += "" + hrs + ":" + (mins < 10 ? "0" : "");
+    }
+
+    ret += "" + mins + ":" + (secs < 10 ? "0" : "");
+    ret += "" + secs;
+    return ret;
+}
+
+const STARTING_TIME = 5 * 60;
+const INCREMENT = 10;
+
+const BOARD_RADIUS = 11;
 const BOARD_SIZE = 2 * BOARD_RADIUS + 1;
 const BOARD_SCALE_PX = 50;
 
@@ -27,24 +56,6 @@ for (let i = 0; i < BOARD_SIZE; i++) {
 	ALL_SCORING_QR.push([BOARD_SIZE - i - 1, BOARD_SIZE - (BOARD_RADIUS - i) - 1]);
 }
 ALL_SCORING_QR.push([BOARD_RADIUS, BOARD_RADIUS]);
-
-/*
-    [0, 3], [0, 4], [0, 5], [0, 6], [1, 2], [1, 3],
-    [1, 4], [1, 5], [1, 6], [2, 1], [2, 2], [2, 3],
-    [2, 4], [2, 5], [2, 6], [3, 0], [3, 1], [3, 2],
-    [3, 3], [3, 4], [3, 5], [3, 6], [4, 0], [4, 1],
-    [4, 2], [4, 3], [4, 4], [4, 5], [5, 0], [5, 1],
-    [5, 2], [5, 3], [5, 4], [6, 0], [6, 1], [6, 2],
-    [6, 3],
-];
-
-const ALL_SCORING_QR = [
-    [0, 3], [0, 4], [0, 5], [0, 6], [1, 2], [1, 6],
-    [2, 1], [2, 6], [3, 0], [3, 3], [3, 6], [4, 0],
-    [4, 5], [5, 0], [5, 4], [6, 0], [6, 1], [6, 2],
-    [6, 3],
-];
-*/
 
 function isScoringQr(qr) {
     for (let testQr of ALL_SCORING_QR)
@@ -83,7 +94,7 @@ class Board {
                 d={`M ${x - BOARD_RADIUS / 2 + 0.05} ${y + funky_constant / 2} l 0 0.5  0.5 ${h}  0.5 ${-h}  0 -0.5  -0.5 ${-h} Z`}
                 stroke='black'
                 strokeWidth='0.05'
-                fill={{0: 'darkgrey', '1': '#66f', '2': '#f66', '3': '#99f', '4': '#f99'}[this.cells[qr]]}
+                fill={{0: 'darkgrey', '1': '#f66', '2': '#66f', '3': '#f99', '4': '#99f', '5': '#fcc', '6': '#ccf'}[this.cells[qr]]}
                 onClick={(evt) => onClick(evt, qr)}
             />
             {isScoringQr(qr) &&
@@ -115,6 +126,15 @@ class App extends React.Component {
         super();
         this.state = {
             board: new Board(),
+            aiPlayer: '???',
+            boardString: '???',
+            isThinking: '???',
+            scoreInterval: {1: 0, 2: 0},
+            boardStringStack: [],
+            nps: '???',
+            evaluationCurve: {},
+            timeBanks: {1: STARTING_TIME, 2: STARTING_TIME},
+            clockActive: false,
             connected: false,
             disconnectionTimeout: undefined,
         };
@@ -124,17 +144,45 @@ class App extends React.Component {
         };
         setInterval(
             () => {
+                if (! this.state.clockActive)
+                    return;
+                const p = this.state.board.playerToMove;
+                if (p === 1 || p === 2) {
+                    this.state.timeBanks[p] -= 0.1;
+                    this.forceUpdate();
+                }
+            },
+            200,
+        );
+        setInterval(
+            () => {
                 this.ws.send(JSON.stringify({kind: 'ping'}));
             },
-            250000000,
+            250,
         );
         this.ws.onmessage = (evt) => {
             const data = JSON.parse(evt.data);
             switch (data.kind) {
                 case 'board':
                     this.state.board.cells = data.board;
+                    if (data.playerToMove !== this.state.board.playerToMove && this.state.clockActive) {
+                        this.state.timeBanks[this.state.board.playerToMove] += INCREMENT;
+                    }
                     this.state.board.playerToMove = data.playerToMove;
                     this.state.board.playerMoveIndex = data.playerMoveIndex;
+                    this.state.aiPlayer = data.aiPlayer;
+                    this.state.isThinking = data.isThinking;
+                    if (
+                        (data.boardString !== this.state.boardString) &&
+                        (this.state.boardStringStack.length === 0 || this.state.boardStringStack[this.state.boardStringStack.length - 1] !== data.boardString)
+                    ) {
+                        this.state.boardStringStack = [...this.state.boardStringStack, data.boardString];
+                    }
+                    this.state.boardString = data.boardString;
+                    this.state.scoreInterval = data.scoreInterval;
+                    this.state.nps = data.nps;
+                    this.state.evaluationCurve = data.evaluationCurve;
+                    console.log(this.state.evaluationCurve);
                     break;
                 case 'ping':
                     break;
@@ -163,9 +211,80 @@ class App extends React.Component {
         }));
     }
 
+    onResume = (evt) => {
+        const resumeBoardString = this.resumeRef.value.trim();
+        if (resumeBoardString.length != 403) {
+            alert('Bad resume string length: ' + resumeBoardString.length + ' (Should have been 403.)');
+            return;
+        }
+        console.log("Resuming from:", resumeBoardString);
+        this.ws.send(JSON.stringify({
+            kind: 'resume',
+            boardString: resumeBoardString,
+        }));
+    }
+
+    onPromptAIMove = (evt) => {
+        this.ws.send(JSON.stringify({kind: 'genmove'}));
+    }
+
+    onUndo = (evt) => {
+        if (this.state.boardStringStack.length <= 1) {
+            alert('Cannot undo any further!');
+            return;
+        }
+        const resumeBoardString = this.state.boardStringStack.pop();
+        console.log("Resuming from:", resumeBoardString);
+        // Anticipate the board string change, to prevent an additional undo entry being inserted.
+        this.ws.send(JSON.stringify({
+            kind: 'resume',
+            boardString: resumeBoardString,
+        }));
+        this.forceUpdate();
+    }
+
+    onToggleClock = (evt) => {
+        this.state.clockActive = ! this.state.clockActive;
+    }
+
     render() {
-        const toMove = this.state.board.playerToMove == 1 ? 'blue' : 'red';
+        const toMove = this.state.board.playerToMove == 1 ? 'red' : 'blue';
+        let winBelief = 0;
+        let largestKey = -1;
+        for (let key of Object.keys(this.state.evaluationCurve)) {
+            key = Number(key);
+            if (key > largestKey)
+                largestKey = key;
+        }
+        if (largestKey !== -1)
+            winBelief = this.state.evaluationCurve[largestKey];
+        const wrapTime = (k, s) => {
+            if (this.state.board.playerToMove === k)
+                return '[' + s + ']';
+            return <>&nbsp;{s}&nbsp;</>;
+        };
         return <div style={{margin: '5px'}} >
+            <div style={{
+                display: 'inline-block',
+                backgroundColor: '#ddd',
+                border: '2px solid black',
+                borderRadius: '5px',
+                marginBottom: '5px',
+                padding: '10px',
+                textAlign: 'center',
+                fontSize: '200%',
+                fontFamily: 'monospace',
+                fontWeight: 'bold',
+            }}>
+                Clock:&nbsp;
+                <span style={{color: 'red'}}>{wrapTime(1, fancyTimeFormat(this.state.timeBanks[1]).padStart(4))}</span>&nbsp;
+                <span style={{color: 'blue'}}>{wrapTime(2, fancyTimeFormat(this.state.timeBanks[2]).padStart(4))}</span>
+                {/*
+                <span style={{color: 'red'}}>{this.state.timeBanks[1].toFixed(1).padStart(5)}</span>&nbsp;
+                <span style={{color: 'blue'}}>{this.state.timeBanks[2].toFixed(1).padStart(5)}</span>
+                */}
+            </div><br/>
+
             <div style={{
                 display: 'inline-block',
                 backgroundColor: '#ddd',
@@ -178,6 +297,7 @@ class App extends React.Component {
                 fontWeight: 'bold',
             }}>
                 <div style={{marginBottom: '5px'}}>
+                    {this.state.isThinking > 0 ? 'Thinking... ' : ''}
                     Turn: <span style={{color: toMove}}>{toMove}</span> - {
                         {a: 'first', b: 'second', win: 'winner'}[this.state.board.playerMoveIndex]
                     }
@@ -185,6 +305,40 @@ class App extends React.Component {
                 <div style={{opacity: this.state.connected ? 1 : 0.3}}>
                     {this.state.board.renderSVG(this.onClick)}
                 </div>
+            </div>
+            {/*
+            <Plot
+                data={[
+                    {
+                        x: Object.keys(this.state.evaluationCurve),
+                        y: Object.values(this.state.evaluationCurve),
+                        type: 'scatter',
+                        mode: 'lines+markers',
+                        marker: {color: 'red'},
+                    },
+                ]}
+                layout={{width: 320, height: 240, title: "AI's belief that it will win"}}
+            />
+            */}
+            {
+                
+            }
+            <div>
+                <br/>
+                AI's belief that it will win: {(100 * winBelief).toFixed(1)}%<br/>
+                Score interval: {this.state.scoreInterval[1]}, {this.state.scoreInterval[2]}<br/>
+                Nodes searched second: {Math.round(4 * this.state.nps)}<br/>
+                <br/>
+                <b>Debugging tools:</b><br/>
+                AI player: {this.state.aiPlayer}<br/>
+                Stack depth: {this.state.boardStringStack.length}<br/>
+                Is thinking: {this.state.isThinking}<br/>
+                Board string:<br/><br/>{this.state.boardString}<br/><br/>
+                Resume from: <input type="text" ref={(resumeRef) => { this.resumeRef = resumeRef; }}/><br/>
+                <button onClick={this.onResume}>Restore Game</button>
+                <button onClick={this.onPromptAIMove}>Prompt AI move</button>
+                <button onClick={this.onToggleClock}>Toggle Clock</button>
+                <button onClick={this.onUndo}>Undo</button>
             </div>
         </div>;
     }

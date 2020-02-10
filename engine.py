@@ -242,7 +242,7 @@ class NNEvaluator:
 		# but in that case I shouldn't be mutating the cached entry! Uh oh. I really have to look into this later.
 
 		# Evaluate special value adjustments.
-		result = board.result()
+		result = board.result_with_early_stopping()
 		if result != None:
 			assert result in (1, 2) and board.move_state[0] in (1, 2)
 			entry.value = 1.0 if result == board.move_state[0] else -1.0
