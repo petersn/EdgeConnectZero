@@ -1,6 +1,7 @@
 import React from 'react';
 import './App.css';
 //import Plot from 'react-plotly.js';
+import { LineChart, Line } from 'recharts';
 
 if (!String.prototype.trim) {
     String.prototype.trim = function () {
@@ -263,6 +264,15 @@ class App extends React.Component {
                 return '[' + s + ']';
             return <>&nbsp;{s}&nbsp;</>;
         };
+
+        let chartData = [];
+        for (let key of this.state.evaluationCurve) {
+            chartData.push({
+                key,
+                ...this.state.evaluationCurve[key],
+            });
+        }
+
         return <div style={{margin: '5px'}} >
             <div style={{
                 display: 'inline-block',
@@ -320,9 +330,9 @@ class App extends React.Component {
                 layout={{width: 320, height: 240, title: "AI's belief that it will win"}}
             />
             */}
-            {
-                
-            }
+            <LineChart width={500} height={500} data={chartData}>
+                <Line type="monotone" dataKey="key" stroke="#99a033" />
+            </LineChart>
             <div>
                 <br/>
                 AI's belief that it will win: {(100 * winBelief).toFixed(1)}%<br/>
