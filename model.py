@@ -247,7 +247,7 @@ if __name__ == "__main__":
 	net = Network("net/")
 	sess = tf.Session()
 	sess.run(tf.global_variables_initializer())
-	load_model(net, "run-cm5-r=11-f=64-b=12-fc=32-g=500-v=800-distl-t0/models/model-270.npy")
+	load_model(net, "run-cm5-r=11-f=64-b=12-fc=32-g=500-v=800-distl-t0/models/model-343.npy")
 	print("About to save!")
 	saver = tf.train.Saver()
 	saver.save(sess, "cpp/checkpoints/edgeconnect-model")

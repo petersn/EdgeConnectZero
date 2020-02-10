@@ -255,7 +255,7 @@ if __name__ == "__main__":
 					if
 						(abs(get_model_number(a) - get_model_number(b)) <= 30 and (get_model_number(a) > 0 or get_model_number(b) > 0)) and
 #						(get_model_number(a) <= 5 and get_model_number(b) <= 5)
-						(get_model_number(a) > 248 or get_model_number(b) > 248) and
+						(get_model_number(a) > 339 or get_model_number(b) > 339) and
 						True
 				]
 				print("Dropping down from %i -> %i" % (pre_filter, len(pairings)))

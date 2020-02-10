@@ -10,6 +10,7 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <cstdio>
 
 #include "union_find.h"
 
@@ -322,6 +323,10 @@ struct EdgeConnectState {
 		return cells == other.cells and move_state == other.move_state;
 	}
 
+	bool strictly_equal(const EdgeConnectState& other) const {
+		return *this == other and first_move_qr == other.first_move_qr;
+	}
+
 	std::string serialize_board() {
 		std::vector<char> result;
 		result.push_back(move_state <= 1 ? '1' : '2');
@@ -339,6 +344,36 @@ struct EdgeConnectState {
 			add_string_to_end_of_vector(std::to_string(qr.second), result);
 		}
 		return std::string(result.begin(), result.end());
+	}
+
+	void from_string(std::string s) {
+		if (s[0] == '1') {
+			move_state = 0;
+		} else {
+			assert(s[0] == '2');
+			move_state = 2;
+		}
+		if (s[1] == 'a') {
+		} else {
+			assert(s[1] == 'b');
+			move_state++;
+		}
+		int c = 2;
+		for (Move m = 0; m < QR_COUNT; m++) {
+			cells[m] = 0;
+			if (VALID_CELLS_MASK[m])
+				cells[m] = s[c++] - '0';
+		}
+		assert(s[c++] == '-');
+		int q, r;
+		assert(sscanf(s.c_str() + c, "%d-%d", &q, &r) == 2);
+//		std::cout << "Read: " << q << " " << r << std::endl;
+		first_move_qr = pack_qr(q, r);
+//		std::cout << "Got: " << s << std::endl;
+//		std::cout << "Ret: " << serialize_board() << std::endl;
+//		std::cout << "Yay!" << std::endl;
+		// XXX: FIXME: This is very expensive. I should maybe get rid of this.
+		assert(serialize_board() == s);
 	}
 };
 

@@ -164,6 +164,7 @@ technically statistically biases the games slightly towards being shorter.)
 				"--games"] + games_paths + [
 				"--old-path", old_model,
 				"--new-path", new_model,
+				"--learning-rate", "0.0001",
 		], close_fds=True)
 
 		end = time.time()

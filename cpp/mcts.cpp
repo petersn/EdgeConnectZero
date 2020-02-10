@@ -27,14 +27,14 @@ using std::shared_ptr;
 using std::cout;
 using std::endl;
 
-constexpr double exploration_parameter = 1.0;
+extern "C" double exploration_parameter = 1.0;
 constexpr double dirichlet_alpha = 0.03;
 constexpr double dirichlet_weight = 0.25;
 constexpr int thread_count = 2;
 
 std::random_device rd;
-//std::default_random_engine generator(rd());
-std::default_random_engine generator(123456789);
+std::default_random_engine generator(rd());
+//std::default_random_engine generator(123456789);
 
 // We raise this exception in worker threads when they're done.
 struct StopWorking : public std::exception {};
@@ -50,12 +50,12 @@ public:
 	}
 };
 
-constexpr const char* meta_graph_path = "checkpoints/edgeconnect-model.meta";
-constexpr const char* checkpoint_path = "checkpoints/edgeconnect-model";
+constexpr const char* meta_graph_path = "cpp/checkpoints/edgeconnect-model.meta";
+constexpr const char* checkpoint_path = "cpp/checkpoints/edgeconnect-model";
 
 static inline int get_random_symmetry() {
-	return 0;
-//	return std::uniform_int_distribution<int>{0, 11}(generator);
+//	return 0;
+	return std::uniform_int_distribution<int>{0, 11}(generator);
 }
 
 std::vector<int> ensemble_sizes;
@@ -104,6 +104,7 @@ struct BoardEvaluator {
 		, input_tensor(tensorflow::DT_FLOAT, tensorflow::TensorShape({MAX_ENSEMBLE_SIZE, 23, 23, 12}))
 	{
 		auto opts = tensorflow::SessionOptions();
+		opts.config.mutable_gpu_options()->set_allow_growth(true);
 		std::cout << "Devices: " << opts.config.gpu_options().visible_device_list() << std::endl;
 		session = tensorflow::NewSession(opts);
 		if (session == nullptr)
@@ -187,7 +188,6 @@ struct BoardEvaluator {
 
 				snp_copy(&cache_entry.policy[0], &cache_entry.policy[BOARD_SIZE * BOARD_SIZE], policy);
 				*value = cache_entry.value;
-				assert(cache_entry.random_symmetry == 0);
 				return cache_entry.random_symmetry;
 			}
 		}
@@ -270,7 +270,7 @@ struct BoardEvaluator {
 	}
 };
 
-std::unique_ptr<BoardEvaluator> evaluator;
+std::unique_ptr<BoardEvaluator> global_evaluator;
 
 struct Evaluations {
 	bool game_over;
@@ -299,7 +299,7 @@ struct Evaluations {
 //		float feature_buffer[FEATURE_MAP_LENGTH] = {};
 //		board.featurize(random_symmetry, feature_buffer);
 		float posterior_array[BOARD_SIZE * BOARD_SIZE];
-		int random_symmetry = evaluator->compute_evaluation(thread_id, board, posterior_array, &value);
+		int random_symmetry = global_evaluator->compute_evaluation(thread_id, board, posterior_array, &value);
 //		std::cout << "Got: " << random_symmetry << std::endl;
 
 		// Softmax the posterior array.
@@ -334,10 +334,10 @@ struct Evaluations {
 		assert(posterior.size() > 0);
 
 		// Find children that are likely to be needed.
-		if (evaluator->can_accept_more())
+		if (global_evaluator->can_accept_more())
 			for (auto& p : posterior)
 				if (p.second >= BoardEvaluator::PROBABILITY_THRESHOLD)
-					if (evaluator->add_likely_to_be_needed_board(thread_id, board, p.first))
+					if (global_evaluator->add_likely_to_be_needed_board(thread_id, board, p.first))
 						1;
 //						std::cout << "Added entry for: " << p.first << " with " << p.second << std::endl;
 
@@ -628,12 +628,37 @@ struct MCTS {
 		// This is a little wasteful, when we could just apply Dirichlet noise, but it's not that bad.
 		root_node->evals_populated = false;
 		root_node->populate_evals(thread_id, use_dirichlet_noise);
+	}
 
+	void set_state_reusing_subtree_if_possible(const EdgeConnectState& board) {
+		shared_ptr<MCTSNode> new_root = nullptr;
+		// Search at depth 1 for the board.
+		for (auto& edge : root_node->outgoing_edges) {
+			if (edge.second.child_node->board == board) {
+				new_root = edge.second.child_node;
+				break;
+			}
+			// Search at depth 2 for the board.
+			for (auto& edge2 : edge.second.child_node->outgoing_edges) {
+				if (edge2.second.child_node->board == board) {
+					new_root = edge2.second.child_node;
+					break;
+				}
+			}
+		}
+		if (new_root != nullptr) {
+			std::cerr << "Managed to reuse some subtree." << std::endl;
+			root_node = new_root;
+			root_board = root_node->board;
+			return;
+		}
+		// Oh no, we couldn't reuse a subtree.
+		init_from_scratch(board);
 	}
 };
 
 Move sample_proportionally_to_visits(const shared_ptr<MCTSNode>& node) {
-	assert(false);
+//	assert(false);
 	double x = std::uniform_real_distribution<float>{0, 1}(generator);
 	for (const std::pair<Move, MCTSEdge>& p : node->outgoing_edges) {
 		double weight = p.second.edge_visits / node->all_edge_visits;
@@ -659,19 +684,45 @@ Move sample_most_visited_move(const shared_ptr<MCTSNode>& node) {
 	return best_move;
 }
 
-extern "C" void launch_mcts(int step_count) {
-	if (evaluator == nullptr) {
-		edgeconnect_initialize_structures();
-		evaluator = std::make_unique<BoardEvaluator>(2);
-		evaluator->do_practice_computation();
-	}
+std::unique_ptr<MCTS> global_mcts;
 
+extern "C" void initialize() {
+	edgeconnect_initialize_structures();
+	global_evaluator = std::make_unique<BoardEvaluator>(2);
+	global_mcts = std::make_unique<MCTS>(0, EdgeConnectState{}, false);
+}
+
+extern "C" void set_state_from_string(char* board_string) {
+//	std::cout << "I was called!" << std::endl;
+	EdgeConnectState board;
+	board.from_string(board_string);
+	// FIXME: Keep subtree progress here!
+	// This will be especially important once I implement pondering.
+	global_mcts->set_state_reusing_subtree_if_possible(board);
+//	global_mcts = std::make_unique<MCTS>(0, board, false);
+}
+
+extern "C" int get_visits_in_current_tree() {
+	int total = 0;
+	for (auto& e : global_mcts->root_node->outgoing_edges)
+		total += e.second.edge_visits;
+	return total;
+}
+
+extern "C" int think() {
+	global_mcts->step();
+	// Compute the best move so far.
+	return sample_proportionally_to_visits(global_mcts->root_node);
+//	return sample_most_visited_move(global_mcts->root_node);
+}
+
+extern "C" void launch_mcts(int step_count) {
 	ensemble_sizes.clear();
 	cache_hits = 0;
 	mcts_search_hash = 123456789;
 
-//	evaluator->nn_cache.clear();
-//	evaluator->board_queue.clear();
+//	global_evaluator->nn_cache.clear();
+//	global_evaluator->board_queue.clear();
 
 	EdgeConnectState starting_state;
 	MCTS mcts(0, starting_state, false);
