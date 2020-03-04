@@ -38,14 +38,16 @@ class EngineThread(threading.Thread):
 #		engine.initialize_model("/tmp/model-170.npy")
 #		self.mcts = engine.MCTSEngine()
 
-		self.player = uai_ringmaster.UAIPlayer(
-			cmd=[
-				"ssh",
-					"-p", "44767",
-					"66.31.30.53",
-					"cd EdgeConnectZero; python uai_interface.py --fast",
-			],
-		)
+		self.player = uai_ringmaster.UAIPlayer(cmd=["python3", "../../uai_interface.py", "--network-path", "/home/snp/tmp/model-343.npy"])
+
+#		self.player = uai_ringmaster.UAIPlayer(
+#			cmd=[
+#				"ssh",
+#					"-p", "44767",
+#					"66.31.30.53",
+#					"cd EdgeConnectZero; python uai_interface.py --fast",
+#			],
+#		)
 		print(self.player.showboard())
 
 		self.message_queue = queue.Queue()
@@ -62,7 +64,8 @@ class EngineThread(threading.Thread):
 			move_count = 2 if state.move_state[1] == "a" else 1
 			for _ in range(move_count):
 				#move = self.mcts.genmove(0.1, use_weighted_exponent=2.0)
-				move = self.player.genmove(2000)
+				move = self.player.genmove(1000)
+#				move = self.player.genmove(5000)
 #				move = random.choice(state.legal_moves())
 				logging.info("AI move: %r", move)
 				if move == "pass":

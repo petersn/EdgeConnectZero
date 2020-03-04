@@ -70,10 +70,43 @@ svg_template = """
 </svg>
 """
 
-background_grid = """<rect width="100%" height="100%" fill="url(#grid)" />"""
-blue_circle = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width=0.05 fill="blue" />"""
-red_circle  = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width=0.05 fill="red" />"""
-grey_circle = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width=0.05 fill="grey" />"""
+background_grid = """<rect width="100%" height="100%" fill="url(#grid)"></rect>"""
+#blue_circle = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width="0.05" fill="blue"></circle>"""
+#red_circle  = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width="0.05" fill="red"></circle>"""
+#grey_circle = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width="0.05" fill="grey"></circle>"""
+
+blue_circle = """
+<path d="M 0 0 l 0 0.5  0.5 0.36  0.5 -0.36  0 -0.5  -0.5 -0.36 Z" stroke="black" stroke-width="0.05" fill="blue"></path>
+"""
+
+red_circle = """
+<path d="M 0 0 l 0 0.5  0.5 0.36  0.5 -0.36  0 -0.5  -0.5 -0.36 Z" stroke="black" stroke-width="0.05" fill="red"></path>
+"""
+
+light_blue_circle = """
+<path d="M 0 0 l 0 0.5  0.5 0.36  0.5 -0.36  0 -0.5  -0.5 -0.36 Z" stroke="black" stroke-width="0.05" fill="#88f"></path>
+"""
+
+light_red_circle = """
+<path d="M 0 0 l 0 0.5  0.5 0.36  0.5 -0.36  0 -0.5  -0.5 -0.36 Z" stroke="black" stroke-width="0.05" fill="#f88"></path>
+"""
+
+suggested_blue = """
+<path d="M 0 0 l 0 0.5  0.5 0.36  0.5 -0.36  0 -0.5  -0.5 -0.36 Z" stroke="blue" stroke-width="0.1" fill="darkgrey"></path>
+"""
+
+suggested_red = """
+<path d="M 0 0 l 0 0.5  0.5 0.36  0.5 -0.36  0 -0.5  -0.5 -0.36 Z" stroke="red" stroke-width="0.1" fill="darkgrey"></path>
+"""
+
+
+grey_circle = """
+<path d="M 0 0 l 0 0.5  0.5 0.36  0.5 -0.36  0 -0.5  -0.5 -0.36 Z" stroke="black" stroke-width="0.05" fill="darkgrey"></path>
+"""
+
+"""<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width="0.05" fill="blue"></circle>"""
+#red_circle  = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width="0.05" fill="red"></circle>"""
+#grey_circle = """<circle cx="0.5" cy="0.433" r="0.45" stroke="black" stroke-width="0.05" fill="grey"></circle>"""
 
 funky_constant = 1.5 / 3**0.5
 
@@ -82,7 +115,7 @@ def translate_svg(x, y, inner_svg):
 		<g transform="translate({}, {})">
 			{}
 		</g>
-	""".format(x + 0.025, y + 0.025, inner_svg)
+	""".format(x + 0.025, y + 0.3, inner_svg)
 
 def qr_to_xy(qr):
 	return np.array([
@@ -176,19 +209,26 @@ class EdgeConnectState:
 
 	def _repr_svg_(self):
 		pixel_width = 1 + BOARD_SIZE * 20
-		pixel_height = 1 + BOARD_SIZE * funky_constant * 20 + 4
+		pixel_height = 1 + BOARD_SIZE * funky_constant * 20 + 8
 		#objects = [background_grid]
 		objects = []
-		for qr, mask in np.ndenumerate(VALID_CELLS_MASK):
-			if mask == 0:
-				assert self.board[qr] == 0
-				continue
-			x, y = qr_to_xy(qr)
-			objects.append(translate_svg(x - BOARD_RADIUS / 2.0, y, {
-				0: grey_circle,
-				1: blue_circle,
-				2: red_circle,
-			}[self.board[qr]]))
+		for z_pass in (False, True):
+			for qr, mask in np.ndenumerate(VALID_CELLS_MASK):
+				if mask == 0:
+					assert self.board[qr] == 0
+					continue
+				x, y = qr_to_xy(qr)
+				if (self.board[qr] in (5, 6)) != z_pass:
+					continue
+				objects.append(translate_svg(x - BOARD_RADIUS / 2.0, y, {
+					0: grey_circle,
+					1: red_circle,
+					2: blue_circle,
+					3: light_red_circle,
+					4: light_blue_circle,
+					5: suggested_red,
+					6: suggested_blue,
+				}[self.board[qr]]))
 		return svg_template.format(
 			width=pixel_width,
 			height=pixel_height,

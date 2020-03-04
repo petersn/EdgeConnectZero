@@ -1,7 +1,7 @@
 import React from 'react';
 import './App.css';
 //import Plot from 'react-plotly.js';
-import { LineChart, Line } from 'recharts';
+import { LineChart, Line, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 if (!String.prototype.trim) {
     String.prototype.trim = function () {
@@ -134,6 +134,7 @@ class App extends React.Component {
             boardStringStack: [],
             nps: '???',
             evaluationCurve: {},
+            chartData: [],
             timeBanks: {1: STARTING_TIME, 2: STARTING_TIME},
             clockActive: false,
             connected: false,
@@ -149,7 +150,7 @@ class App extends React.Component {
                     return;
                 const p = this.state.board.playerToMove;
                 if (p === 1 || p === 2) {
-                    this.state.timeBanks[p] -= 0.1;
+                    this.state.timeBanks[p] -= 0.2;
                     this.forceUpdate();
                 }
             },
@@ -183,7 +184,25 @@ class App extends React.Component {
                     this.state.scoreInterval = data.scoreInterval;
                     this.state.nps = data.nps;
                     this.state.evaluationCurve = data.evaluationCurve;
-                    console.log(this.state.evaluationCurve);
+                    //console.log(this.state.evaluationCurve);
+                    //let chartData = [];
+                    this.state.chartData = this.state.chartData.filter(
+                        (obj) => obj.value === this.state.evaluationCurve[obj.key]
+                    );
+                    for (let key of Object.keys(this.state.evaluationCurve)) {
+                        key = Number(key);
+                        //chartData = chartData.filter(
+                        //    (obj) => obj.value === this.state.evaluationCurve[obj.key]
+                        //);
+                        //if (this.state.evaluationCurve[key] !== this.state.chartData[key]) 
+                        if (! this.state.chartData.find((obj) => obj.key === key)) {
+                            this.state.chartData.push({
+                                key,
+                                value: this.state.evaluationCurve[key],
+                            });
+                        }
+                    }
+                    this.state.chartData.sort((a, b) => Number(a.key) - Number(b.key));
                     break;
                 case 'ping':
                     break;
@@ -248,6 +267,27 @@ class App extends React.Component {
         this.state.clockActive = ! this.state.clockActive;
     }
 
+    handleKeydown = (e) => {
+        if (!e) return;
+        if (e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return;
+        switch (e.key.toLowerCase()) {
+          case 't':
+            if (this.buttonRef) {
+              this.buttonRef.focus();
+              this.buttonRef.click();
+            }
+            break;
+        }
+      };
+
+    componentDidMount() {
+        window.addEventListener('keydown', this.handleKeydown);
+    }
+
+    componentWillUnmount() {
+        window.removeEventListener('keydown', this.handleKeydown);
+    }
+
     render() {
         const toMove = this.state.board.playerToMove == 1 ? 'red' : 'blue';
         let winBelief = 0;
@@ -265,15 +305,12 @@ class App extends React.Component {
             return <>&nbsp;{s}&nbsp;</>;
         };
 
-        let chartData = [];
-        for (let key of this.state.evaluationCurve) {
-            chartData.push({
-                key,
-                ...this.state.evaluationCurve[key],
-            });
-        }
-
-        return <div style={{margin: '5px'}} >
+        return <div style={{
+                margin: '5px',
+                display: 'flex',
+                justifyContent: 'space-between'
+            }} >
+            <div className="left" style={{ width: '50%' }}>
             <div style={{
                 display: 'inline-block',
                 backgroundColor: '#ddd',
@@ -316,6 +353,7 @@ class App extends React.Component {
                     {this.state.board.renderSVG(this.onClick)}
                 </div>
             </div>
+            </div>
             {/*
             <Plot
                 data={[
@@ -330,25 +368,33 @@ class App extends React.Component {
                 layout={{width: 320, height: 240, title: "AI's belief that it will win"}}
             />
             */}
-            <LineChart width={500} height={500} data={chartData}>
-                <Line type="monotone" dataKey="key" stroke="#99a033" />
-            </LineChart>
-            <div>
-                <br/>
-                AI's belief that it will win: {(100 * winBelief).toFixed(1)}%<br/>
-                Score interval: {this.state.scoreInterval[1]}, {this.state.scoreInterval[2]}<br/>
-                Nodes searched second: {Math.round(4 * this.state.nps)}<br/>
-                <br/>
-                <b>Debugging tools:</b><br/>
-                AI player: {this.state.aiPlayer}<br/>
-                Stack depth: {this.state.boardStringStack.length}<br/>
-                Is thinking: {this.state.isThinking}<br/>
-                Board string:<br/><br/>{this.state.boardString}<br/><br/>
-                Resume from: <input type="text" ref={(resumeRef) => { this.resumeRef = resumeRef; }}/><br/>
-                <button onClick={this.onResume}>Restore Game</button>
-                <button onClick={this.onPromptAIMove}>Prompt AI move</button>
-                <button onClick={this.onToggleClock}>Toggle Clock</button>
-                <button onClick={this.onUndo}>Undo</button>
+            <div className="right" style={{ width: '50%' }}>
+                <b style={{fontSize: '150%'}}>AI's belief that it will win:</b>
+                <LineChart width={1000} height={500} data={this.state.chartData}>
+                    <Line type="monotone" dataKey="value" stroke="teal" strokeWidth="5" />
+                    <CartesianGrid stroke="#ccc" />
+                    <XAxis dataKey="key" />
+                    <YAxis domain={[0, 1]}/>
+                </LineChart>
+                <div>
+                    <br/>
+                    <div style={{fontSize: '130%'}}>
+                        AI's current belief that it will win: {(100 * winBelief).toFixed(1)}%<br/>
+                        Score interval: {this.state.scoreInterval[1]}, {this.state.scoreInterval[2]}<br/>
+                        Nodes searched last turn: {Math.round(2 * this.state.nps)}<br/>
+                    </div>
+                    <br/>
+                    <b>Debugging tools:</b><br/>
+                    AI player: {this.state.aiPlayer}<br/>
+                    Stack depth: {this.state.boardStringStack.length}<br/>
+                    Is thinking: {this.state.isThinking}<br/>
+                    Board string:<br/><br/>{this.state.boardString}<br/><br/>
+                    Resume from: <input type="text" ref={(resumeRef) => { this.resumeRef = resumeRef; }}/><br/>
+                    <button onClick={this.onResume}>Restore Game</button>
+                    <button onClick={this.onPromptAIMove}>Prompt AI move</button>
+                    <button onClick={this.onToggleClock} ref={(ele) => { this.buttonRef = ele; }}>Toggle Clock</button>
+                    <button onClick={this.onUndo}>Undo</button>
+                </div>
             </div>
         </div>;
     }
